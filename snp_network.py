@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # from read_data import *
 import torch
 from torch import nn, tensor
@@ -7,7 +8,7 @@ import pickle
 from os.path import exists
 import numpy as np
 import os
-from read_data import *
+from snp_input import *
 from self_attention_net import *
 
 # home_dir = os.environ.get("HOME")
@@ -56,7 +57,7 @@ def get_transformer(seq_len, vocab_size, batch_size, device):
         batch_size=batch_size,
         device=device,
         output_type="binary",
-        use_linformer=False,
+        use_linformer=True,
         linformer_k=16,
     )
     return net
@@ -130,16 +131,23 @@ def train_net(
                     test_loss += l.mean()
             print("{:.3} (test)".format(test_loss / len(test_iter)))
 
-    print("first few train cases:")
-    for tX, tY in training_dataset[:10]:
-        tX = tX.to(device)
+    print("random few train cases:")
+    txs, txy = training_dataset[np.random.choice(len(training_dataset), size=10)]
+    training_subset = zip(txs, txy)
+    for tX, tY in training_subset:
+        tX = tX.to(device).unsqueeze(0)
+        tY = tY.to(device).unsqueeze(0)
         tYh = net(tX)
         tzip = zip(tYh, tY)
         for a, b in tzip:
             print("{:.3f}, \t {}".format(a[1].item(), b.item()))
 
-    print("first few test cases:")
-    for tX, tY in test_dataset[:10]:
+    print("random few test cases:")
+    txs, txy = test_dataset[np.random.choice(len(test_dataset), size=10)]
+    test_subset = zip(txs, txy)
+    for tX, tY in test_subset:
+        tX = tX.to(device).unsqueeze(0)
+        tY = tY.to(device).unsqueeze(0)
         tX = tX.to(device)
         tYh = net(tX)
         tzip = zip(tYh, tY)
@@ -296,7 +304,7 @@ def main():
     CLS_TOK = 3
     UNK_TOK = 4
     home_dir = os.environ.get("HOME")
-    os.chdir(home_dir + "/gout-data/neural_networks/")
+    os.chdir(home_dir + "/work/gout-transformer")
 
     # from self_attention_net import *
 
@@ -310,7 +318,7 @@ def main():
     else:
         # geno, pheno = read_from_plink(small_set=True)
         print("reading data from parquet")
-        geno, pheno = read_from_parquet(small_set=False)
+        geno, pheno = read_from_plink(small_set=False)
         print("done, writing to pickle")
         with open("geno.pickle", "wb") as f:
             pickle.dump(geno, f, pickle.HIGHEST_PROTOCOL)
@@ -321,18 +329,26 @@ def main():
     geno = geno.astype(np.int64)
     geno = prepend_cls_tok(geno, CLS_TOK)
     geno = translate_unknown(geno, UNK_TOK) # tokens have to be sequential, we can't have -9 in there.
-    batch_size = 1
-    num_epochs = 5
-    lr = 0.1
+    batch_size = 10
+    num_epochs = 50
+    lr = 0.0001
     # test_submatrix = tensor(geno[0:100, 0:500], device=device)
     # net = get_mlp(200, 10, 1, device)
+    print(geno)
+    print(np.shape(geno))
+    print(pheno)
     net = get_transformer(np.shape(geno)[1], 50, batch_size, device)
+
+    # shrink for testing
+    geno = geno[:20000]
+    pheno = pheno[:20000]
 
     train, test = get_train_test(geno, pheno, 0.3, device)
     # train = amplify_to_half(train)
     # test = amplify_to_half(test)
     train = reduce_to_half(train)
     test = reduce_to_half(test)
+
     print("train dataset: ", check_pos_neg_frac(train))
     print("test dataset: ", check_pos_neg_frac(test))
 
