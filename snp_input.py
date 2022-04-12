@@ -5,6 +5,7 @@ import numpy as np
 from pandas_plink import read_plink1_bin
 from pyarrow import parquet
 import torch
+from process_snv_mat import get_tok_mat
 
 data_dir = os.environ['UKBB_DATA'] + "/"
 gwas_dir = os.environ['UKBB_DATA'] + "/gwas_associated_only/"
@@ -22,26 +23,7 @@ class Tokenised_SNVs:
         # val == 0 means we have two 'a0' vals
         # val == 2 means two 'a1' vals
         # val == 1 means one of each
-        for ri, row in enumerate(vals):
-            # tok_row = []
-            for ind,val in enumerate(row):
-                if np.isnan(val):
-                    string = 'nan'
-                if val == 0:
-                    string = a0[ind]
-                elif val == 2:
-                    string = a1[ind]
-                elif val == 1:
-                    string = a0[ind] + ',' + a1[ind]
-
-                if string in string_to_tok:
-                    tok = string_to_tok[string]
-                else:
-                    tok = num_toks
-                    num_toks = num_toks + 1
-                    string_to_tok[string] = tok
-                    tok_to_string[tok] = string
-                tok_mat[ri, ind] = tok
+        tok_mat, tok_to_string, string_to_tok, num_toks = get_tok_mat(a0, a1, vals)
 
         self.string_to_tok = string_to_tok
         self.tok_to_string = tok_to_string
@@ -51,9 +33,10 @@ class Tokenised_SNVs:
 
 def read_from_plink(remove_nan=True, small_set=False):
     print("using data from:", data_dir)
-    bed_file = gwas_dir+"xaa_chr1_tmp.bed"
-    bim_file = gwas_dir+"xaa_chr1_tmp.bim"
-    fam_file = gwas_dir+"xaa_chr1_tmp.fam"
+    plink_base="all_gwas"
+    bed_file = gwas_dir+plink_base+".bed"
+    bim_file = gwas_dir+plink_base+".bim"
+    fam_file = gwas_dir+plink_base+".fam"
     print("bed_file:", bed_file)
     geno_tmp = read_plink1_bin(bed_file, bim_file, fam_file)
     geno_tmp["sample"] = pandas.to_numeric(geno_tmp["sample"])
