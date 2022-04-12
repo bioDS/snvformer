@@ -225,6 +225,26 @@ class PositionalEncoding(nn.Module):
     def forward(self, X):
         X = X + self.P[:, :X.shape[1], :].to(X.device)
         return self.dropout(X)
+
+class ExplicitPositionalEncoding(nn.Module):
+    """Positional encoding."""
+    # def __init__(self, num_hiddens, dropout, max_len=1000):
+    def __init__(self, d_model: int, dropout: float = 0.0, max_len: int = 5000):
+        super(ExplicitPositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(dropout)
+        # Create a long enough `P`
+        self.P = torch.zeros((1, max_len, d_model))
+        X = torch.arange(max_len, dtype=torch.float32).reshape(
+            -1, 1) / torch.pow(10000, torch.arange(
+            0, d_model, 2, dtype=torch.float32) / d_model)
+        self.P[:, :, 0::2] = torch.sin(X)
+        self.P[:, :, 1::2] = torch.cos(X)
+
+    def forward(self, X, positions):
+        # X_old = X
+        # P = self.P.repeat(len(X), 1, 1)
+        X = X + self.P[:, positions[0,:], :].to(X.device)
+        return self.dropout(X)
     
 class AddNorm(nn.Module):
     """Add residual then normalise"""

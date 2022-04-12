@@ -4,9 +4,50 @@ import pandas
 import numpy as np
 from pandas_plink import read_plink1_bin
 from pyarrow import parquet
+import torch
 
 data_dir = os.environ['UKBB_DATA'] + "/"
 gwas_dir = os.environ['UKBB_DATA'] + "/gwas_associated_only/"
+
+class Tokenised_SNVs:
+    def __init__(self, a0, a1, vals, positions):
+        tok_mat = torch.zeros(np.shape(vals), dtype=torch.int32)
+        print(tok_mat)
+        string_to_tok = {}
+        tok_to_string = {}
+
+        string_to_tok['nan'] = 0
+        tok_to_string[0] = 'nan'
+        num_toks = 1
+        # val == 0 means we have two 'a0' vals
+        # val == 2 means two 'a1' vals
+        # val == 1 means one of each
+        for ri, row in enumerate(vals):
+            # tok_row = []
+            for ind,val in enumerate(row):
+                if np.isnan(val):
+                    string = 'nan'
+                if val == 0:
+                    string = a0[ind]
+                elif val == 2:
+                    string = a1[ind]
+                elif val == 1:
+                    string = a0[ind] + ',' + a1[ind]
+
+                if string in string_to_tok:
+                    tok = string_to_tok[string]
+                else:
+                    tok = num_toks
+                    num_toks = num_toks + 1
+                    string_to_tok[string] = tok
+                    tok_to_string[tok] = string
+                tok_mat[ri, ind] = tok
+
+        self.string_to_tok = string_to_tok
+        self.tok_to_string = tok_to_string
+        self.tok_mat = tok_mat
+        self.num_toks = num_toks
+        self.positions = torch.tensor(positions, dtype=torch.long)
 
 def read_from_plink(remove_nan=True, small_set=False):
     print("using data from:", data_dir)
@@ -31,6 +72,7 @@ def read_from_plink(remove_nan=True, small_set=False):
         urate = urate[0:num_samples]
 
     geno_mat = geno.values
+    positions = np.asarray(geno.pos)
 
     num_zeros = np.sum(geno_mat == 0)
     num_ones = np.sum(geno_mat == 1)
@@ -55,7 +97,10 @@ def read_from_plink(remove_nan=True, small_set=False):
     if remove_nan:
         geno_mat[np.isnan(geno_mat)] = most_common
 
-    return geno_mat, urate
+    # we ideally want the position and the complete change
+    snv_toks = Tokenised_SNVs(geno.a0.values, geno.a1.values, geno.values, geno.pos.values)
+
+    return snv_toks, urate
 
 if __name__ == "__main__":
-    geno_urate = read_from_plink()
+    snv_toks, urate = read_from_plink()

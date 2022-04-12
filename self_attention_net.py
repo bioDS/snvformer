@@ -27,10 +27,11 @@ class TransformerBlock(nn.Module):
         return self.addnorm(ffn_out, residual2)
 
 class TransformerModel(nn.Module):
-    def __init__(self, seq_len, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, output_type, use_linformer=False, linformer_k=16) -> None:
+    def __init__(self, seq_len, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, output_type, use_linformer=False, linformer_k=16) -> None:
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, embedding_dim=embed_dim, device=device)
-        self.pos_encoding = PositionalEncoding(embed_dim, max_len=seq_len)
+        # self.pos_encoding = PositionalEncoding(embed_dim, max_len=seq_len)
+        self.pos_encoding = ExplicitPositionalEncoding(embed_dim, max_len=max_seq_pos+1)
         self.blocks = []
         for _ in range(num_layers):
             new_block = TransformerBlock(seq_len, embed_dim, num_heads, vocab_size, batch_size, device, use_linformer, linformer_k)
@@ -54,9 +55,9 @@ class TransformerModel(nn.Module):
         else:
             raise ValueError("output_type must be 'binary' or 'continuous'")
 
-    def forward(self, x):
+    def forward(self, x, pos):
         ex = self.embedding(x.t()).swapaxes(0,1)
-        ep = self.pos_encoding(ex)
+        ep = self.pos_encoding(ex, pos)
         at = ep
         for block in self.blocks:
             at = block(at)

@@ -11,8 +11,11 @@ import os
 from snp_input import *
 from self_attention_net import *
 
-# home_dir = os.environ.get("HOME")
-# os.chdir(home_dir + "/gout-data/neural_networks")
+'''
+TODO: 
+- use snp positions properly
+- use full set of sequences (not small test subset)
+'''
 
 
 class simple_mlp(nn.Module):
@@ -47,9 +50,10 @@ def get_mlp(in_size, num_hiddens, depth, device):
     return net
 
 
-def get_transformer(seq_len, vocab_size, batch_size, device):
+def get_transformer(seq_len, max_seq_pos, vocab_size, batch_size, device):
     net = TransformerModel(
         seq_len,
+        max_seq_pos,
         embed_dim=32,
         num_heads=2,
         num_layers=1,
@@ -66,11 +70,12 @@ def get_transformer(seq_len, vocab_size, batch_size, device):
 def get_train_test(geno, pheno, test_split, device):
     urate = pheno["urate"].values
     gout = pheno["gout"].values
-    test_cutoff = (int)(math.ceil(test_split * len(geno)))
-    test_seqs = geno[:test_cutoff]
+    test_cutoff = (int)(math.ceil(test_split * geno.tok_mat.shape[0]))
+    positions = tensor(geno.positions)
+    test_seqs = geno.tok_mat[:test_cutoff,]
     test_phes = gout[:test_cutoff]
-    train_seqs = geno[test_cutoff:]
-    train_phes = gout[test_cutoff:]
+    train_seqs = geno.tok_mat[test_cutoff:,]
+    train_phes = gout[test_cutoff:,]
     print("seqs shape: ", train_seqs.shape)
     print("phes shape: ", train_phes.shape)
     # training_dataset = data.TensorDataset(
@@ -80,10 +85,10 @@ def get_train_test(geno, pheno, test_split, device):
     #     tensor(test_seqs, device=device), tensor(test_phes, dtype=torch.int64)
     # )
     training_dataset = data.TensorDataset(
-        tensor(train_seqs), tensor(train_phes, dtype=torch.int64)
+        positions.repeat(len(train_seqs), 1), tensor(train_seqs), tensor(train_phes, dtype=torch.int64)
     )
     test_dataset = data.TensorDataset(
-        tensor(test_seqs), tensor(test_phes, dtype=torch.int64)
+        positions.repeat(len(test_seqs), 1), tensor(test_seqs), tensor(test_phes, dtype=torch.int64)
     )
     return training_dataset, test_dataset
 
@@ -103,11 +108,12 @@ def train_net(
     for e in range(num_epochs):
         print("epoch {}".format(e))
         sum_loss = 0.0
-        for X, y in training_iter:
+        for pos, X, y in training_iter:
             # X = X.t()
             X = X.to(device)
             y = y.to(device)
-            Yh = net(X)  # two-value softmax (binary classification)
+            pos = pos.to(device)
+            Yh = net(X, pos)  # two-value softmax (binary classification)
             l = loss(Yh, y)
             trainer.zero_grad()
             l.mean().backward()
@@ -122,34 +128,36 @@ def train_net(
             )
             test_loss = 0.0
             with torch.no_grad():
-                for X, y in test_iter:
+                for pos, X, y in test_iter:
                     # X = X.t()
                     X = X.to(device)
                     y = y.to(device)
-                    Yh = net(X)  # two-value softmax (binary classification)
+                    pos = pos.to(device)
+                    Yh = net(X, pos)  # two-value softmax (binary classification)
                     l = loss(Yh, y)
                     test_loss += l.mean()
             print("{:.3} (test)".format(test_loss / len(test_iter)))
 
     print("random few train cases:")
-    txs, txy = training_dataset[np.random.choice(len(training_dataset), size=10)]
-    training_subset = zip(txs, txy)
-    for tX, tY in training_subset:
+    pos, txs, txy = training_dataset[np.random.choice(len(training_dataset), size=10)]
+    training_subset = zip(pos, txs, txy)
+    for pos, tX, tY in training_subset:
         tX = tX.to(device).unsqueeze(0)
         tY = tY.to(device).unsqueeze(0)
-        tYh = net(tX)
+        pos = pos.to(device).unsqueeze(0)
+        tYh = net(tX, pos)
         tzip = zip(tYh, tY)
         for a, b in tzip:
             print("{:.3f}, \t {}".format(a[1].item(), b.item()))
 
     print("random few test cases:")
-    txs, txy = test_dataset[np.random.choice(len(test_dataset), size=10)]
-    test_subset = zip(txs, txy)
-    for tX, tY in test_subset:
+    pos, txs, txy = test_dataset[np.random.choice(len(test_dataset), size=10)]
+    test_subset = zip(pos, txs, txy)
+    for pos, tX, tY in test_subset:
         tX = tX.to(device).unsqueeze(0)
         tY = tY.to(device).unsqueeze(0)
-        tX = tX.to(device)
-        tYh = net(tX)
+        pos = pos.to(device).unsqueeze(0)
+        tYh = net(tX, pos)
         tzip = zip(tYh, tY)
         for a, b in tzip:
             print("{:.3f}, \t {}".format(a[1].item(), b.item()))
@@ -158,9 +166,9 @@ def train_net(
     test_total_correct = 0.0
     test_total_incorrect = 0.0
     with torch.no_grad():
-        for tX, tY in test_iter:
+        for pos, tX, tY in test_iter:
             tX = tX.to(device)
-            tYh = net(tX)
+            tYh = net(tX, pos)
             binary_tYh = tYh[:, 1] > 0.5
             binary_tY = tY > 0.5
             binary_tY = binary_tY.to(device)
@@ -171,9 +179,9 @@ def train_net(
     train_total_correct = 0.0
     train_total_incorrect = 0.0
     with torch.no_grad():
-        for tX, tY in training_iter:
+        for pos, tX, tY in training_iter:
             tX = tX.to(device)
-            tYh = net(tX)
+            tYh = net(tX, pos)
             binary_tYh = tYh[:, 1] > 0.5
             binary_tY = tY > 0.5
             binary_tY = binary_tY.to(device)
@@ -195,7 +203,8 @@ def reduce_to_half(train):
     train_pos_y = []
     train_neg_X = []
     train_neg_y = []
-    for X, y in train:
+    positions, _, _ = train[0]
+    for pos, X, y in train:
         if y == 1:
             train_pos_X.append(X.cpu())
             train_pos_y.append(y.cpu())
@@ -227,9 +236,12 @@ def reduce_to_half(train):
         train_phes.append(y)
         # train_datasets.append(data.TensorDataset(X.expand(0), y.view(1)))
     # train_seqs = tensor(train_seqs)
+    train_seqs = torch.stack(train_seqs)
+    train_phes = torch.stack(train_phes)
+    train_pos = positions.repeat(len(train_seqs), 1)
 
     training_dataset = data.TensorDataset(
-        torch.stack(train_seqs), torch.stack(train_phes)
+        train_pos, train_seqs, train_phes
     )
 
     return training_dataset
@@ -281,7 +293,7 @@ def amplify_to_half(train):
 
 def check_pos_neg_frac(dataset: data.TensorDataset):
     pos, neg, unknown = 0, 0, 0
-    for (_, y) in dataset:
+    for (_, _, y) in dataset:
         if y == 1:
             pos = pos + 1
         elif y == 0:
@@ -317,7 +329,7 @@ def main():
             pheno = pickle.load(f)
     else:
         # geno, pheno = read_from_plink(small_set=True)
-        print("reading data from parquet")
+        print("reading data from plink")
         geno, pheno = read_from_plink(small_set=False)
         print("done, writing to pickle")
         with open("geno.pickle", "wb") as f:
@@ -326,22 +338,15 @@ def main():
             pickle.dump(pheno, f, pickle.HIGHEST_PROTOCOL)
         print("done")
 
-    geno = geno.astype(np.int64)
-    geno = prepend_cls_tok(geno, CLS_TOK)
-    geno = translate_unknown(geno, UNK_TOK) # tokens have to be sequential, we can't have -9 in there.
-    batch_size = 10
+    batch_size = 100
     num_epochs = 50
-    lr = 0.0001
-    # test_submatrix = tensor(geno[0:100, 0:500], device=device)
-    # net = get_mlp(200, 10, 1, device)
-    print(geno)
-    print(np.shape(geno))
-    print(pheno)
-    net = get_transformer(np.shape(geno)[1], 50, batch_size, device)
+    lr = 0.001
+    max_seq_pos = geno.positions.max()
+    net = get_transformer(geno.tok_mat.shape[1], max_seq_pos, geno.num_toks, batch_size, device) #TODO: maybe positions go too high?
 
     # shrink for testing
-    geno = geno[:20000]
-    pheno = pheno[:20000]
+    # geno = geno[:20000]
+    # pheno = pheno[:20000]
 
     train, test = get_train_test(geno, pheno, 0.3, device)
     # train = amplify_to_half(train)
