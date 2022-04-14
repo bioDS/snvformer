@@ -320,6 +320,13 @@ def translate_unknown(seqs, tok):
     np.place(seqs, seqs == -9, tok)
     return seqs
 
+def dataset_random_n(set: data.TensorDataset, n: int):
+    pos, x, y = set[np.random.choice(len(set), size=n)]
+    subset = data.TensorDataset(
+        pos, x, y
+    )
+    return subset
+
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     # device = "cpu"
@@ -356,12 +363,12 @@ def main():
     # net = get_mlp(geno.tok_mat.shape[1], geno.num_toks, max_seq_pos, device)
 
     # shrink for testing
-    # geno = geno[:20000]
-    # pheno = pheno[:20000]
 
     train, test = get_train_test(geno, pheno, 0.3, device)
     # train = amplify_to_half(train)
     # test = amplify_to_half(test)
+    train = dataset_random_n(train, 50000)
+    test = dataset_random_n(test, 10000)
     train = reduce_to_half(train)
     test = reduce_to_half(test)
 
