@@ -19,9 +19,11 @@ TODO:
 
 
 class simple_mlp(nn.Module):
-    def __init__(self, in_size, num_hiddens, depth, device) -> None:
+    def __init__(self, in_size, num_hiddens, depth, vocab_size, embed_dim, max_seq_pos, device) -> None:
         super().__init__()
-        self.input_layer = nn.Linear(in_size, num_hiddens, device=device)
+        self.embedding = nn.Embedding(vocab_size, embedding_dim=embed_dim, device=device)
+        self.pos_encoding = ExplicitPositionalEncoding(embed_dim, max_len=max_seq_pos+1)
+        self.input_layer = nn.Linear(in_size*embed_dim, num_hiddens, device=device)
         self.blocks = []
         for _ in range(depth):
             self.blocks.append(
@@ -36,17 +38,25 @@ class simple_mlp(nn.Module):
         )
         self.device = device
 
-    def forward(self, X):
-        X = X.to(self.device)
-        tmp = self.input_layer(X)
+    def forward(self, x, pos):
+        x = x.to(self.device)
+        x = self.embedding(x.t()).swapaxes(0,1)
+        x = self.pos_encoding(x, pos)
+        x = x.reshape(x.shape[0],x.shape[1]*x.shape[2])
+        tmp = self.input_layer(x)
         for block in self.blocks:
             tmp = block(tmp)
         tmp = self.output_layer(tmp)
         return tmp
 
 
-def get_mlp(in_size, num_hiddens, depth, device):
-    net = simple_mlp(in_size, num_hiddens, depth, device)
+    # net = get_transformer(geno.tok_mat.shape[1], max_seq_pos, geno.num_toks, batch_size, device) #TODO: maybe positions go too high?
+    # net = get_mlp(geno.tok_mat.shape[1], geno.num_toks, max_seq_pos, device)
+def get_mlp(in_size, vocab_size, max_seq_pos, device):
+    num_hiddens = 32
+    depth = 3
+    embed_dim = 32
+    net = simple_mlp(in_size, num_hiddens, depth, vocab_size, embed_dim, max_seq_pos, device)
     return net
 
 
@@ -106,7 +116,7 @@ def train_net(
 
     print("starting training")
     for e in range(num_epochs):
-        print("epoch {}".format(e))
+        # print("epoch {}".format(e))
         sum_loss = 0.0
         for pos, X, y in training_iter:
             # X = X.t()
@@ -343,6 +353,7 @@ def main():
     lr = 0.001
     max_seq_pos = geno.positions.max()
     net = get_transformer(geno.tok_mat.shape[1], max_seq_pos, geno.num_toks, batch_size, device) #TODO: maybe positions go too high?
+    # net = get_mlp(geno.tok_mat.shape[1], geno.num_toks, max_seq_pos, device)
 
     # shrink for testing
     # geno = geno[:20000]
