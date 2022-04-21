@@ -347,7 +347,7 @@ def main():
     else:
         # geno, pheno = read_from_plink(small_set=True)
         print("reading data from plink")
-        geno, pheno = read_from_plink(small_set=False)
+        geno, pheno = read_from_plink(small_set=False, subsample_control=True)
         print("done, writing to pickle")
         with open("geno.pickle", "wb") as f:
             pickle.dump(geno, f, pickle.HIGHEST_PROTOCOL)
@@ -365,12 +365,6 @@ def main():
     # shrink for testing
 
     train, test = get_train_test(geno, pheno, 0.3, device)
-    # train = amplify_to_half(train)
-    # test = amplify_to_half(test)
-    train = dataset_random_n(train, 50000)
-    test = dataset_random_n(test, 10000)
-    train = reduce_to_half(train)
-    test = reduce_to_half(test)
 
     print("train dataset: ", check_pos_neg_frac(train))
     print("test dataset: ", check_pos_neg_frac(test))

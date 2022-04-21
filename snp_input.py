@@ -8,32 +8,26 @@ import torch
 from process_snv_mat import get_tok_mat
 
 data_dir = os.environ['UKBB_DATA'] + "/"
-gwas_dir = os.environ['UKBB_DATA'] + "/gwas_associated_only/"
+# gwas_dir = os.environ['UKBB_DATA'] + "/gwas_associated_only/"
+gwas_dir = os.environ['UKBB_DATA'] + "/"
 
 class Tokenised_SNVs:
-    def __init__(self, a0, a1, vals, positions):
-        tok_mat = torch.zeros(np.shape(vals), dtype=torch.int32)
-        print(tok_mat)
-        string_to_tok = {}
-        tok_to_string = {}
-
-        string_to_tok['nan'] = 0
-        tok_to_string[0] = 'nan'
-        num_toks = 1
+    def __init__(self, geno):
         # val == 0 means we have two 'a0' vals
         # val == 2 means two 'a1' vals
         # val == 1 means one of each
-        tok_mat, tok_to_string, string_to_tok, num_toks = get_tok_mat(a0, a1, vals)
+        tok_mat, tok_to_string, string_to_tok, num_toks = get_tok_mat(geno)
 
         self.string_to_tok = string_to_tok
         self.tok_to_string = tok_to_string
         self.tok_mat = tok_mat
         self.num_toks = num_toks
-        self.positions = torch.tensor(positions, dtype=torch.long)
+        self.positions = torch.tensor(geno.pos.values, dtype=torch.long)
 
-def read_from_plink(remove_nan=True, small_set=False):
+def read_from_plink(remove_nan=False, small_set=False, subsample_control=True):
     print("using data from:", data_dir)
-    plink_base="all_gwas"
+    # plink_base="all_gwas"
+    plink_base="all_combined"
     bed_file = gwas_dir+plink_base+".bed"
     bim_file = gwas_dir+plink_base+".bim"
     fam_file = gwas_dir+plink_base+".fam"
@@ -53,6 +47,15 @@ def read_from_plink(remove_nan=True, small_set=False):
         num_snps = 200
         geno = geno[0:num_samples, 0:num_snps]
         urate = urate[0:num_samples]
+
+    if (subsample_control):
+        gout_cases = urate[urate.gout]["eid"]
+        non_gout_cases = urate[urate.gout == False]["eid"]
+        # non_gout_cases = np.where(urate.gout == False)[0]
+        non_gout_sample = np.random.choice(non_gout_cases, size=len(gout_cases), replace=False)
+        sample_ids = list(set(gout_cases).union(non_gout_sample))
+        urate = urate[urate["eid"].isin(sample_ids)]
+        geno = geno[geno["sample"].isin(sample_ids)]
 
     geno_mat = geno.values
     positions = np.asarray(geno.pos)
@@ -81,7 +84,7 @@ def read_from_plink(remove_nan=True, small_set=False):
         geno_mat[np.isnan(geno_mat)] = most_common
 
     # we ideally want the position and the complete change
-    snv_toks = Tokenised_SNVs(geno.a0.values, geno.a1.values, geno.values, geno.pos.values)
+    snv_toks = Tokenised_SNVs(geno)
 
     return snv_toks, urate
 
