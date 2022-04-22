@@ -371,6 +371,7 @@ def main():
 
     train_net(net, train, test, batch_size, num_epochs, device, lr)
 
+    torch.save(net.state_dict(), "last_run_net.pickle")
 
 if __name__ == "__main__":
     main()
