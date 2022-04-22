@@ -3,6 +3,8 @@ import numpy as np
 from pandas_plink import write_plink1_bin
 import torch
 from xarray import DataArray
+import pandas as pd
+import csv
 
 plink_base="random"
 bed_file = plink_base+".bed"
@@ -32,3 +34,9 @@ random_geno = DataArray(values, dims=["sample", "variant"], coords=dict(
 ))
 
 write_plink1_bin(random_geno, bed_file, bim_file, fam_file)
+
+urate = np.random.normal(size=num_samples)
+gout = np.random.choice([True,False], num_samples)
+
+urate_df = pd.DataFrame({"eid": sample_ids, "gout": gout, "urate": urate})
+urate_df.to_csv("random_urate.csv", index=False, quoting=csv.QUOTE_NONNUMERIC)
