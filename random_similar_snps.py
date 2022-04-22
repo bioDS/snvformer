@@ -11,8 +11,8 @@ bed_file = plink_base+".bed"
 bim_file = plink_base+".bim"
 fam_file = plink_base+".fam"
 
-num_snps = 500000
-num_samples = 10000
+num_snps = 350000
+num_samples = 40000
 positions = np.random.choice(range(10000000), size=num_snps, replace=False)
 positions.sort()
 snp_names = ["snp" + str(i) for i in positions]
@@ -36,7 +36,7 @@ random_geno = DataArray(values, dims=["sample", "variant"], coords=dict(
 write_plink1_bin(random_geno, bed_file, bim_file, fam_file)
 
 urate = np.random.normal(size=num_samples)
-gout = np.random.choice([True,False], num_samples)
+gout = np.random.choice([True,False,False,False], num_samples)
 
 urate_df = pd.DataFrame({"eid": sample_ids, "gout": gout, "urate": urate})
 urate_df.to_csv("random_urate.csv", index=False, quoting=csv.QUOTE_NONNUMERIC)
