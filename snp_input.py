@@ -10,6 +10,8 @@ from process_snv_mat import get_tok_mat
 data_dir = os.environ['UKBB_DATA'] + "/"
 # gwas_dir = os.environ['UKBB_DATA'] + "/gwas_associated_only/"
 gwas_dir = os.environ['UKBB_DATA'] + "/"
+plink_base = os.environ['PLINK_FILE']
+urate_file = os.environ['URATE_FILE']
 
 class Tokenised_SNVs:
     def __init__(self, geno):
@@ -26,15 +28,13 @@ class Tokenised_SNVs:
 
 def read_from_plink(remove_nan=False, small_set=False, subsample_control=True):
     print("using data from:", data_dir)
-    # plink_base="all_gwas"
-    plink_base="all_combined"
     bed_file = gwas_dir+plink_base+".bed"
     bim_file = gwas_dir+plink_base+".bim"
     fam_file = gwas_dir+plink_base+".fam"
     print("bed_file:", bed_file)
     geno_tmp = read_plink1_bin(bed_file, bim_file, fam_file)
     geno_tmp["sample"] = pandas.to_numeric(geno_tmp["sample"])
-    urate_tmp = pandas.read_csv(data_dir + "urate.csv")
+    urate_tmp = pandas.read_csv(data_dir + urate_file)
     withdrawn_ids = pandas.read_csv(data_dir + "w12611_20220222.csv", header=None, names=["ids"])
 
     usable_ids = list(set(urate_tmp.eid) - set(withdrawn_ids.ids))
