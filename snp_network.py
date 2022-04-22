@@ -64,15 +64,15 @@ def get_transformer(seq_len, max_seq_pos, vocab_size, batch_size, device):
     net = TransformerModel(
         seq_len,
         max_seq_pos,
-        embed_dim=32,
-        num_heads=2,
-        num_layers=1,
+        embed_dim=64,
+        num_heads=4,
+        num_layers=4,
         vocab_size=vocab_size,
         batch_size=batch_size,
         device=device,
         output_type="binary",
         use_linformer=True,
-        linformer_k=16,
+        linformer_k=64,
     )
     return net
 
@@ -109,8 +109,9 @@ def train_net(
     print("beginning training")
     training_iter = data.DataLoader(training_dataset, batch_size, shuffle=True)
     test_iter = data.DataLoader(test_dataset, (int)(batch_size), shuffle=True)
-    trainer = torch.optim.SGD(net.parameters(), lr=learning_rate)
+    # trainer = torch.optim.SGD(net.parameters(), lr=learning_rate)
     # trainer = torch.optim.Adam(net.parameters(), lr=learning_rate) # Tends to set all 0 or all 1
+    trainer = torch.optim.AdamW(net.parameters(), lr=learning_rate) # Tends to set all 0 or all 1
 
     loss = nn.CrossEntropyLoss()
 
@@ -355,9 +356,9 @@ def main():
             pickle.dump(pheno, f, pickle.HIGHEST_PROTOCOL)
         print("done")
 
-    batch_size = 100
-    num_epochs = 50
-    lr = 0.001
+    batch_size = 2
+    num_epochs = 10
+    lr = 1e-4
     max_seq_pos = geno.positions.max()
     net = get_transformer(geno.tok_mat.shape[1], max_seq_pos, geno.num_toks, batch_size, device) #TODO: maybe positions go too high?
     # net = get_mlp(geno.tok_mat.shape[1], geno.num_toks, max_seq_pos, device)
