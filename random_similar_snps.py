@@ -40,3 +40,6 @@ gout = np.random.choice([True,False], num_samples)
 
 urate_df = pd.DataFrame({"eid": sample_ids, "gout": gout, "urate": urate})
 urate_df.to_csv("random_urate.csv", index=False, quoting=csv.QUOTE_NONNUMERIC)
+
+withdrawn_ids = pd.DataFrame(np.random.choice(sample_ids, 10))
+withdrawn_ids.to_csv("w12611_20220222.csv", index=False, header=False)
