@@ -9,9 +9,11 @@ cimport cython
 # val == 2 means two 'a1' vals
 # val == 1 means one of each
 # def get_tok_mat(a0, a1, vals):
+# positions are in GRCh37
 @cython.boundscheck(False)  # Deactivate bounds checking
 @cython.wraparound(False)   # Deactivate negative indexing.
-def get_tok_mat(geno):
+# 'ai_encoding' means ACTCTT -> AI, 'ins', 'del'
+def get_tok_mat(geno, use_ai_encoding=False):
     a0 = geno.a0.values
     a1 = geno.a1.values
     # tok_mat = torch.zeros(np.shape(vals), dtype=torch.int32)
@@ -22,8 +24,11 @@ def get_tok_mat(geno):
     cdef int n = n_tmp
     cdef int p = p_tmp
 
-    string_to_tok['nan'] = 0
-    tok_to_string[0] = 'nan'
+    pos = 0
+    for special_tok in ['nan', 'ins', 'del']:
+        string_to_tok[special_tok] = pos
+        tok_to_string[pos] = special_tok
+        pos = pos + 1
     cdef int nan_tok = 0
 
     a0_toks = np.zeros(p, dtype=np.int32)
@@ -35,6 +40,8 @@ def get_tok_mat(geno):
     pos = len(string_to_tok)
     print("identifying tokens")
     for i,string in enumerate(a0):
+        if (use_ai_encoding and len(string) > 1):
+            string = string[0] + 'I'
         if string in string_to_tok:
             tok = string_to_tok[string]
         else:
@@ -43,7 +50,19 @@ def get_tok_mat(geno):
             tok_to_string[pos] = string
             pos = pos + 1
         a0_toks[i] = tok
-    for i,string in enumerate(a1):
+    for i in range(len(a1)):
+        if use_ai_encoding:
+            if len(a1[i]) == len(a0[i]):
+                if (len(a1[i]) > 1):
+                    string = a1[i][0] + 'I'
+                else:
+                    string = a1[i]
+            elif len(a1[i]) > len(a0[i]):
+                string = 'ins'
+            elif len(a1[i]) < len(a0[i]):
+                string = 'del'
+        else:
+            string = a1[i]
         if string in string_to_tok:
             tok = string_to_tok[string]
         else:
@@ -53,7 +72,23 @@ def get_tok_mat(geno):
             pos = pos + 1
         a1_toks[i] = tok
     for i,(a,b) in enumerate(zip(a0,a1)):
-        string = str(a) + ',' + str(b)
+        if use_ai_encoding:
+            a = str(a)
+            b = str(b)
+            a_len = len(a)
+            b_len = len(b)
+            if (a_len > 1):
+                a = a[0] + 'I'
+            if (b_len > 1):
+                b = b[0] + 'I'
+            if b_len == a_len:
+                string = a + ',' + b
+            elif b_len > a_len:
+                string = a + ',' + 'ins'
+            elif b_len < a_len:
+                string = a + ',' + 'del'
+        else:
+            string = str(a) + ',' + str(b)
         if string in string_to_tok:
             tok = string_to_tok[string]
         else:
