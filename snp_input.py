@@ -14,11 +14,11 @@ plink_base = os.environ['PLINK_FILE']
 urate_file = os.environ['URATE_FILE']
 
 class Tokenised_SNVs:
-    def __init__(self, geno):
+    def __init__(self, geno, use_ai_encoding):
         # val == 0 means we have two 'a0' vals
         # val == 2 means two 'a1' vals
         # val == 1 means one of each
-        tok_mat, tok_to_string, string_to_tok, num_toks = get_tok_mat(geno)
+        tok_mat, tok_to_string, string_to_tok, num_toks = get_tok_mat(geno, use_ai_encoding)
 
         self.string_to_tok = string_to_tok
         self.tok_to_string = tok_to_string
@@ -26,7 +26,7 @@ class Tokenised_SNVs:
         self.num_toks = num_toks
         self.positions = torch.tensor(geno.pos.values, dtype=torch.long)
 
-def read_from_plink(remove_nan=False, small_set=False, subsample_control=True):
+def read_from_plink(remove_nan=False, small_set=False, subsample_control=True, use_ai_encoding=False):
     print("using data from:", data_dir)
     bed_file = gwas_dir+plink_base+".bed"
     bim_file = gwas_dir+plink_base+".bim"
@@ -84,7 +84,7 @@ def read_from_plink(remove_nan=False, small_set=False, subsample_control=True):
         geno_mat[np.isnan(geno_mat)] = most_common
 
     # we ideally want the position and the complete change
-    snv_toks = Tokenised_SNVs(geno)
+    snv_toks = Tokenised_SNVs(geno, use_ai_encoding)
 
     return snv_toks, urate
 

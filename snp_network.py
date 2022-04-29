@@ -353,8 +353,9 @@ def main():
 
     # from self_attention_net import *
 
-    geno_file = plink_base + '_geno_cache.pickle'
-    pheno_file = plink_base + '_pheno_cache.pickle'
+    use_ai_encoding = True
+    geno_file = plink_base + 'ai_enc-' + use_ai_encoding + '_geno_cache.pickle'
+    pheno_file = plink_base +'ai_enc-' + use_ai_encoding +  '_pheno_cache.pickle'
     if exists(geno_file) and exists(pheno_file):
         with open(geno_file, "rb") as f:
             geno = pickle.load(f)
@@ -363,7 +364,7 @@ def main():
     else:
         # geno, pheno = read_from_plink(small_set=True)
         print("reading data from plink")
-        geno, pheno = read_from_plink(small_set=False, subsample_control=True)
+        geno, pheno = read_from_plink(small_set=False, subsample_control=True, use_ai_encoding=True)
         # geno_preprocessed_file = 
         print("done, writing to pickle")
         with open(geno_file, "wb") as f:
