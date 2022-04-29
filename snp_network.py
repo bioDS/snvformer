@@ -373,7 +373,7 @@ def main():
         print("done")
 
     batch_size = 180
-    num_epochs = 50
+    num_epochs = 150
     lr = 1e-7
     max_seq_pos = geno.positions.max()
     net = get_transformer(geno.tok_mat.shape[1], max_seq_pos, geno.num_toks, batch_size, device) #TODO: maybe positions go too high?
