@@ -372,9 +372,9 @@ def main():
             pickle.dump(pheno, f, pickle.HIGHEST_PROTOCOL)
         print("done")
 
-    batch_size = 60
+    batch_size = 180
     num_epochs = 50
-    lr = 1e-6
+    lr = 1e-7
     max_seq_pos = geno.positions.max()
     net = get_transformer(geno.tok_mat.shape[1], max_seq_pos, geno.num_toks, batch_size, device) #TODO: maybe positions go too high?
     net = nn.DataParallel(net, use_device_ids).to(use_device_ids[0])
