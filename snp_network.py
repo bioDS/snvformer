@@ -17,6 +17,7 @@ TODO:
 - use full set of sequences (not small test subset)
 '''
 
+plink_base = os.environ['PLINK_FILE']
 
 class simple_mlp(nn.Module):
     def __init__(self, in_size, num_hiddens, depth, vocab_size, embed_dim, max_seq_pos, device) -> None:
@@ -148,6 +149,17 @@ def train_net(
                     l = loss(Yh, y)
                     test_loss += l.mean()
             print("{:.3} (test)".format(test_loss / len(test_iter)))
+            print("random few train cases:")
+            pos, txs, txy = training_dataset[np.random.choice(len(training_dataset), size=5)]
+            training_subset = zip(pos, txs, txy)
+            for pos, tX, tY in training_subset:
+                tX = tX.to(device).unsqueeze(0)
+                tY = tY.to(device).unsqueeze(0)
+                pos = pos.to(device).unsqueeze(0)
+                tYh = net(tX, pos)
+                tzip = zip(tYh, tY)
+                for a, b in tzip:
+                    print("{:.3f}, \t {}".format(a[1].item(), b.item()))
 
     print("random few train cases:")
     pos, txs, txy = training_dataset[np.random.choice(len(training_dataset), size=10)]
@@ -330,6 +342,9 @@ def dataset_random_n(set: data.TensorDataset, n: int):
 
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    if (torch.cuda.device_count() > 1):
+        device = torch.device('cuda:1')
+    use_device_ids=[1,2,3,4,5,6]
     # device = "cpu"
     CLS_TOK = 3
     UNK_TOK = 4
@@ -338,8 +353,8 @@ def main():
 
     # from self_attention_net import *
 
-    geno_file = "geno.pickle"
-    pheno_file = "pheno.pickle"
+    geno_file = plink_base + '_geno_cache.pickle'
+    pheno_file = plink_base + '_pheno_cache.pickle'
     if exists(geno_file) and exists(pheno_file):
         with open(geno_file, "rb") as f:
             geno = pickle.load(f)
@@ -349,21 +364,21 @@ def main():
         # geno, pheno = read_from_plink(small_set=True)
         print("reading data from plink")
         geno, pheno = read_from_plink(small_set=False, subsample_control=True)
+        # geno_preprocessed_file = 
         print("done, writing to pickle")
-        with open("geno.pickle", "wb") as f:
+        with open(geno_file, "wb") as f:
             pickle.dump(geno, f, pickle.HIGHEST_PROTOCOL)
-        with open("pheno.pickle", "wb") as f:
+        with open(pheno_file, "wb") as f:
             pickle.dump(pheno, f, pickle.HIGHEST_PROTOCOL)
         print("done")
 
-    batch_size = 2
-    num_epochs = 10
-    lr = 1e-4
+    batch_size = 60
+    num_epochs = 50
+    lr = 1e-6
     max_seq_pos = geno.positions.max()
     net = get_transformer(geno.tok_mat.shape[1], max_seq_pos, geno.num_toks, batch_size, device) #TODO: maybe positions go too high?
+    net = nn.DataParallel(net, use_device_ids).to(use_device_ids[0])
     # net = get_mlp(geno.tok_mat.shape[1], geno.num_toks, max_seq_pos, device)
-
-    # shrink for testing
 
     train, test = get_train_test(geno, pheno, 0.3, device)
 

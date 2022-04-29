@@ -118,16 +118,18 @@ class LinformerAttention(nn.Module):
     def __init__(self, embed_dim, seq_len, linform_k,
                  num_heads, dropout, device='cpu', bias=False, **kwargs):
         super().__init__(**kwargs)
+        self.device=device
         self.num_heads = num_heads
+        use_device_ids=[1,2,3,4]
         self.attention = D2LDotProductAttention(dropout)
-        # self.attention = D2LAdditiveAttention(key_size, query_size, num_hiddens, dropout)
-        self.W_q = nn.Linear(embed_dim, embed_dim, bias=bias, device=device)
-        self.W_k = nn.Linear(embed_dim, embed_dim, bias=bias, device=device)
-        self.W_v = nn.Linear(embed_dim, embed_dim, bias=bias, device=device)
-        self.W_o = nn.Linear(embed_dim, embed_dim, bias=bias, device=device)
+
+        self.W_q = nn.Linear(embed_dim, embed_dim, bias=bias)
+        self.W_k = nn.Linear(embed_dim, embed_dim, bias=bias)
+        self.W_v = nn.Linear(embed_dim, embed_dim, bias=bias)
+        self.W_o = nn.Linear(embed_dim, embed_dim, bias=bias)
         # Linformer components
-        self.E_i = nn.Linear(seq_len, linform_k, device=device)
-        self.F_i = nn.Linear(seq_len, linform_k, device=device)
+        self.E_i = nn.Linear(seq_len, linform_k)
+        self.F_i = nn.Linear(seq_len, linform_k)
 
     def forward(self, queries, keys, values, valid_lens):
         queries = transpose_qkv(self.W_q(queries), self.num_heads)

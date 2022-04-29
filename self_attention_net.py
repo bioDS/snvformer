@@ -9,9 +9,8 @@ class TransformerBlock(nn.Module):
             self.attention = LinformerAttention(embed_dim, seq_len, linformer_k, num_heads, dropout=0.05, device=device)
         else:
             self.attention = D2LMultiHeadAttention(embed_dim, num_heads, dropout=0.05, device=device)
-        self.addnorm = AddNorm(embed_dim, device)
-        self.positionwise_ffn = PositionWiseFFN(embed_dim, embed_dim, embed_dim, device=device)
-        self.device = device
+        self.addnorm = AddNorm(embed_dim)
+        self.positionwise_ffn = PositionWiseFFN(embed_dim, embed_dim, embed_dim)
 
     def forward(self, X):
         """X is (batch_size, seq_len, embed_dim)"""
@@ -29,21 +28,22 @@ class TransformerBlock(nn.Module):
 class TransformerModel(nn.Module):
     def __init__(self, seq_len, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, output_type, use_linformer=False, linformer_k=16) -> None:
         super().__init__()
-        self.embedding = nn.Embedding(vocab_size, embedding_dim=embed_dim, device=device)
-        # self.pos_encoding = PositionalEncoding(embed_dim, max_len=seq_len)
+        self.device = device
+        self.embedding = nn.Embedding(vocab_size, embedding_dim=embed_dim)
         self.pos_encoding = ExplicitPositionalEncoding(embed_dim, max_len=max_seq_pos+1)
         self.blocks = []
         for _ in range(num_layers):
             new_block = TransformerBlock(seq_len, embed_dim, num_heads, vocab_size, batch_size, device, use_linformer, linformer_k)
             self.blocks.append(new_block)
+        self.blocks = nn.ModuleList(self.blocks)
         self.output_type = output_type
-        self.true = tensor([0.0,1.0], device=device)
+        self.true = tensor([0.0,1.0])
         if output_type == 'tok':
-            dense = nn.Linear(embed_dim, 2, device=device)
+            dense = nn.Linear(embed_dim, 2)
             self.softmax = nn.Softmax(1)
             self.final_layer = nn.Sequential(dense, self.softmax)
         elif output_type == 'binary':
-            dense = nn.Linear(embed_dim*seq_len, 2, device=device)
+            dense = nn.Linear(embed_dim*seq_len, 2)
             self.softmax = nn.Softmax(1)
             self.final_layer = nn.Sequential(dense, self.softmax)
             # pass
@@ -51,7 +51,7 @@ class TransformerModel(nn.Module):
             # dense1 = nn.Linear(num_hiddens, 1, device=device)
             # dense2 = nn.Linear(seq_len, 1, device=device)
             # self.final_layer = nn.Sequential(dense1, dense2)
-            self.final_layer = nn.Linear(seq_len*embed_dim, 1, device=device)
+            self.final_layer = nn.Linear(seq_len*embed_dim, 1)
         else:
             raise ValueError("output_type must be 'binary' or 'continuous'")
 
@@ -61,7 +61,6 @@ class TransformerModel(nn.Module):
         at = ep
         for block in self.blocks:
             at = block(at)
-        # print("at shape: {}".format(at.shape))
         if self.output_type == "tok":
             # cls_tok = at[:,0,0]
             cls_tok = at[:,0,:]
