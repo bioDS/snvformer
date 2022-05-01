@@ -1,5 +1,5 @@
 import torch
-from torch import nn, tensor
+from torch import nan_to_num_, nn, tensor
 from pytorch_attention import *
 
 class TransformerBlock(nn.Module):
@@ -25,12 +25,28 @@ class TransformerBlock(nn.Module):
         ffn_out = self.positionwise_ffn(ra_out)
         return self.addnorm(ffn_out, residual2)
 
+class One_Hot_Embedding:
+    def __init__(self, num_classes: int):
+        self.num_classes = num_classes
+        pass
+
+    def embed(self, t: tensor):
+        # new_t = t.long().to(t.device)
+        # return torch.nn.functional.one_hot(new_t)
+        return torch.nn.functional.one_hot(t.long(), num_classes=self.num_classes)
+
 class TransformerModel(nn.Module):
     def __init__(self, seq_len, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, output_type, use_linformer=False, linformer_k=16) -> None:
         super().__init__()
         self.device = device
-        self.embedding = nn.Embedding(vocab_size, embedding_dim=embed_dim)
-        self.pos_encoding = ExplicitPositionalEncoding(embed_dim, max_len=max_seq_pos+1)
+        # self.embedding = nn.Embedding(vocab_size, embedding_dim=embed_dim)
+        self.pos_size = embed_dim - vocab_size
+        if self.pos_size % 2 == 1:
+            self.pos_size = self.pos_size - 1
+        one_hot_embed_size = embed_dim - self.pos_size
+        embedding = One_Hot_Embedding(one_hot_embed_size)
+        self.embedding = embedding.embed
+        self.pos_encoding = ExplicitPositionalEncoding(self.pos_size, max_len=max_seq_pos+1)
         self.blocks = []
         for _ in range(num_layers):
             new_block = TransformerBlock(seq_len, embed_dim, num_heads, vocab_size, batch_size, device, use_linformer, linformer_k)
@@ -56,9 +72,10 @@ class TransformerModel(nn.Module):
             raise ValueError("output_type must be 'binary' or 'continuous'")
 
     def forward(self, x, pos):
-        ex = self.embedding(x.t()).swapaxes(0,1)
-        ep = self.pos_encoding(ex, pos)
-        at = ep
+        # ex = self.embedding(x.t()).swapaxes(0,1)
+        ex = self.embedding(x)
+        ep = self.pos_encoding(torch.zeros([x.shape[0], x.shape[1], self.pos_size], device=x.device), pos)
+        at = torch.cat([ex, ep], dim=2)
         for block in self.blocks:
             at = block(at)
         if self.output_type == "tok":

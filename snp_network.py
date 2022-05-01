@@ -111,8 +111,9 @@ def train_net(
     training_iter = data.DataLoader(training_dataset, batch_size, shuffle=True)
     test_iter = data.DataLoader(test_dataset, (int)(batch_size), shuffle=True)
     # trainer = torch.optim.SGD(net.parameters(), lr=learning_rate)
-    # trainer = torch.optim.Adam(net.parameters(), lr=learning_rate) # Tends to set all 0 or all 1
-    trainer = torch.optim.AdamW(net.parameters(), lr=learning_rate) # Tends to set all 0 or all 1
+    # trainer = torch.optim.Adam(net.parameters(), lr=learning_rate)
+    trainer = torch.optim.AdamW(net.parameters(), lr=learning_rate)
+    # trainer = torch.optim.AdamW(net.parameters(), lr=learning_rate, amsgrad=True) #TODO worth a try.
 
     loss = nn.CrossEntropyLoss()
 
@@ -354,8 +355,8 @@ def main():
     # from self_attention_net import *
 
     use_ai_encoding = True
-    geno_file = plink_base + 'ai_enc-' + use_ai_encoding + '_geno_cache.pickle'
-    pheno_file = plink_base +'ai_enc-' + use_ai_encoding +  '_pheno_cache.pickle'
+    geno_file = plink_base + 'ai_enc-' + str(use_ai_encoding) + '_geno_cache.pickle'
+    pheno_file = plink_base +'ai_enc-' + str(use_ai_encoding) +  '_pheno_cache.pickle'
     if exists(geno_file) and exists(pheno_file):
         with open(geno_file, "rb") as f:
             geno = pickle.load(f)
@@ -373,9 +374,10 @@ def main():
             pickle.dump(pheno, f, pickle.HIGHEST_PROTOCOL)
         print("done")
 
-    batch_size = 180
+    batch_size = 180 #TODO: make bigger
     num_epochs = 150
     lr = 1e-7
+    net_name = "ai-{}_batch-{}_epochs-{}_p-{}_n-{}_net.pickle".format(str(use_ai_encoding), batch_size, num_epochs, geno.tok_mat.shape[1], geno.tok_mat.shape[0])
     max_seq_pos = geno.positions.max()
     net = get_transformer(geno.tok_mat.shape[1], max_seq_pos, geno.num_toks, batch_size, device) #TODO: maybe positions go too high?
     net = nn.DataParallel(net, use_device_ids).to(use_device_ids[0])
@@ -388,7 +390,7 @@ def main():
 
     train_net(net, train, test, batch_size, num_epochs, device, lr)
 
-    torch.save(net.state_dict(), "last_run_net.pickle")
+    torch.save(net.state_dict(), net_name)
 
 if __name__ == "__main__":
     main()
