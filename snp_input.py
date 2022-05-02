@@ -52,13 +52,16 @@ def read_from_plink(remove_nan=False, small_set=False, subsample_control=True, u
         gout_cases = urate[urate.gout]["eid"]
         non_gout_cases = urate[urate.gout == False]["eid"]
         # non_gout_cases = np.where(urate.gout == False)[0]
-        non_gout_sample = np.random.choice(non_gout_cases, size=len(gout_cases), replace=False)
+        non_gout_sample = np.random.choice(non_gout_cases, size=10*len(gout_cases), replace=False)
         sample_ids = list(set(gout_cases).union(non_gout_sample))
         urate = urate[urate["eid"].isin(sample_ids)]
         geno = geno[geno["sample"].isin(sample_ids)]
 
+    gout_cases = urate[urate.gout]["eid"]
+    non_gout_cases = urate[urate.gout == False]["eid"]
     geno_mat = geno.values
     positions = np.asarray(geno.pos)
+
 
     num_zeros = np.sum(geno_mat == 0)
     num_ones = np.sum(geno_mat == 1)
