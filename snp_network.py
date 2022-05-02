@@ -88,29 +88,30 @@ def get_train_test(geno, pheno, test_split):
     gout_submat = geno.tok_mat[gout_mat_rows,:]
     control_submat = geno.tok_mat[control_mat_rows,:]
 
-    test_cutoff = (int)(math.ceil(test_split * gout_submat.shape[0]))
+    gout_test_cutoff = (int)(math.ceil((1-test_split) * gout_submat.shape[0]))
+    control_test_cutoff = (int)(math.ceil((1-test_split) * control_submat.shape[0]))
     positions = geno.positions
 
-    train_gout_mat = gout_submat[0:test_cutoff,]
-    train_gout_pheno = tensor(gout[gout_mat_rows[0:test_cutoff],])
+    train_gout_mat = gout_submat[0:gout_test_cutoff,]
+    train_gout_pheno = tensor(gout[gout_mat_rows[0:gout_test_cutoff],])
     training_gout_dataset = data.TensorDataset(
         positions.repeat(len(train_gout_pheno), 1), train_gout_mat, train_gout_pheno.to(torch.int64)
     )
 
-    train_control_mat = control_submat[0:test_cutoff,]
-    train_control_pheno = tensor(gout[control_mat_rows[0:test_cutoff],])
+    train_control_mat = control_submat[0:control_test_cutoff,]
+    train_control_pheno = tensor(gout[control_mat_rows[0:control_test_cutoff],])
     training_control_dataset = data.TensorDataset(
         positions.repeat(len(train_control_pheno), 1), train_control_mat, train_control_pheno.to(torch.int64)
     )
 
-    test_gout_mat = gout_submat[test_cutoff:,]
-    test_gout_pheno = tensor(gout[gout_mat_rows[test_cutoff:],])
+    test_gout_mat = gout_submat[gout_test_cutoff:,]
+    test_gout_pheno = tensor(gout[gout_mat_rows[gout_test_cutoff:],])
     test_gout_dataset = data.TensorDataset(
         positions.repeat(len(test_gout_pheno), 1), test_gout_mat, test_gout_pheno.to(torch.int64)
     )
 
-    test_control_mat = control_submat[test_cutoff:,]
-    test_control_pheno = tensor(gout[control_mat_rows[test_cutoff:],])
+    test_control_mat = control_submat[control_test_cutoff:,]
+    test_control_pheno = tensor(gout[control_mat_rows[control_test_cutoff:],])
     test_control_dataset = data.TensorDataset(
         positions.repeat(len(test_control_pheno), 1), test_control_mat, test_control_pheno.to(torch.int64)
     )
@@ -118,8 +119,9 @@ def get_train_test(geno, pheno, test_split):
     return training_gout_dataset, training_control_dataset, test_gout_dataset, test_control_dataset
 
 def get_even_training_samples(train_gout: data.TensorDataset, train_control: data.TensorDataset):
-    control_subsample = train_control[np.random.choice(len(train_control), size=len(train_gout))]
-    return data.ConcatDataset([train_gout, control_subsample])
+    # control_subsample = train_control[np.random.choice(len(train_control), size=len(train_gout))]
+    control_subsample = data.Subset(train_control, np.random.choice(len(train_control), size=len(train_gout)))
+    return data.ConcatDataset([train_gout, control_subsample], )
 
 def train_net(
     net, training_gout_control, test_gout_control, batch_size, num_epochs, device, learning_rate
@@ -173,9 +175,7 @@ def train_net(
                     test_loss += l.mean()
             print("{:.3} (test)".format(test_loss / len(test_iter)))
             print("random few train cases:")
-            pos, txs, txy = training_dataset[np.random.choice(len(training_dataset), size=5)]
-            training_subset = zip(pos, txs, txy)
-            for pos, tX, tY in training_subset:
+            for pos, tX, tY in data.Subset(training_dataset, np.random.choice(len(training_dataset), size=5)):
                 tX = tX.to(device).unsqueeze(0)
                 tY = tY.to(device).unsqueeze(0)
                 pos = pos.to(device).unsqueeze(0)
@@ -185,9 +185,7 @@ def train_net(
                     print("{:.3f}, \t {}".format(a[1].item(), b.item()))
 
     print("random few train cases:")
-    pos, txs, txy = training_dataset[np.random.choice(len(training_dataset), size=10)]
-    training_subset = zip(pos, txs, txy)
-    for pos, tX, tY in training_subset:
+    for pos, tX, tY in data.Subset(training_dataset, np.random.choice(len(training_dataset), size=10)):
         tX = tX.to(device).unsqueeze(0)
         tY = tY.to(device).unsqueeze(0)
         pos = pos.to(device).unsqueeze(0)
@@ -197,9 +195,7 @@ def train_net(
             print("{:.3f}, \t {}".format(a[1].item(), b.item()))
 
     print("random few test cases:")
-    pos, txs, txy = test_dataset[np.random.choice(len(test_dataset), size=10)]
-    test_subset = zip(pos, txs, txy)
-    for pos, tX, tY in test_subset:
+    for pos, tX, tY in data.Subset(test_dataset, np.random.choice(len(test_dataset), size=10)):
         tX = tX.to(device).unsqueeze(0)
         tY = tY.to(device).unsqueeze(0)
         pos = pos.to(device).unsqueeze(0)
