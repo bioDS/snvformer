@@ -18,11 +18,7 @@ class Tokenised_SNVs:
         # val == 0 means we have two 'a0' vals
         # val == 2 means two 'a1' vals
         # val == 1 means one of each
-        if encoding == 2:
-            use_ai_encoding = True
-        else:
-            use_ai_encoding = False
-        tok_mat, tok_to_string, string_to_tok, num_toks = get_tok_mat(geno, use_ai_encoding)
+        tok_mat, tok_to_string, string_to_tok, num_toks = get_tok_mat(geno, encoding)
 
         self.string_to_tok = string_to_tok
         self.tok_to_string = tok_to_string

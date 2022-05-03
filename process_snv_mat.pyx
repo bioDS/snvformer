@@ -184,6 +184,7 @@ def get_tok_mat(geno, encoding: int = 2):
     (n_tmp,p_tmp) = geno.shape
     cdef int n = n_tmp
     cdef int p = p_tmp
+    cdef int pos = 0
 
     for special_tok in ['nan', 'ins', 'del']:
         string_to_tok[special_tok] = pos
