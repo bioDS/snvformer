@@ -85,40 +85,34 @@ def get_train_test_large_control(geno, pheno, test_split):
     gout_submat = geno.tok_mat[gout_mat_rows,:]
     control_submat = geno.tok_mat[control_mat_rows,:]
 
-    gout_test_cutoff = (int)(math.ceil((1-test_split) * gout_submat.shape[0]))
-    control_test_cutoff = (int)(math.ceil((1-test_split) * control_submat.shape[0]))
+    test_cutoff = (int)(math.ceil(test_split * gout_submat.shape[0]))
     positions = geno.positions
 
-    train_gout_mat = gout_submat[0:gout_test_cutoff,]
-    train_gout_pheno = tensor(gout[gout_mat_rows[0:gout_test_cutoff],])
+    train_gout_mat = gout_submat[0:test_cutoff,]
+    train_gout_pheno = tensor(gout[gout_mat_rows[0:test_cutoff],])
     training_gout_dataset = data.TensorDataset(
         positions.repeat(len(train_gout_pheno), 1), train_gout_mat, train_gout_pheno.to(torch.int64)
     )
 
-    train_control_mat = control_submat[0:control_test_cutoff,]
-    train_control_pheno = tensor(gout[control_mat_rows[0:control_test_cutoff],])
+    train_control_mat = control_submat[0:test_cutoff,]
+    train_control_pheno = tensor(gout[control_mat_rows[0:test_cutoff],])
     training_control_dataset = data.TensorDataset(
         positions.repeat(len(train_control_pheno), 1), train_control_mat, train_control_pheno.to(torch.int64)
     )
 
-    test_gout_mat = gout_submat[gout_test_cutoff:,]
-    test_gout_pheno = tensor(gout[gout_mat_rows[gout_test_cutoff:],])
+    test_gout_mat = gout_submat[test_cutoff:,]
+    test_gout_pheno = tensor(gout[gout_mat_rows[test_cutoff:],])
     test_gout_dataset = data.TensorDataset(
         positions.repeat(len(test_gout_pheno), 1), test_gout_mat, test_gout_pheno.to(torch.int64)
     )
 
-    test_control_mat = control_submat[control_test_cutoff:,]
-    test_control_pheno = tensor(gout[control_mat_rows[control_test_cutoff:],])
+    test_control_mat = control_submat[test_cutoff:,]
+    test_control_pheno = tensor(gout[control_mat_rows[test_cutoff:],])
     test_control_dataset = data.TensorDataset(
         positions.repeat(len(test_control_pheno), 1), test_control_mat, test_control_pheno.to(torch.int64)
     )
 
     return training_gout_dataset, training_control_dataset, test_gout_dataset, test_control_dataset
-
-def get_even_training_samples(train_gout: data.TensorDataset, train_control: data.TensorDataset):
-    # control_subsample = train_control[np.random.choice(len(train_control), size=len(train_gout))]
-    control_subsample = data.Subset(train_control, np.random.choice(len(train_control), size=len(train_gout), replace=False))
-    return data.ConcatDataset([train_gout, control_subsample], )
 
 def train_net(
     net, training_gout_control, test_gout_control, batch_size, num_epochs, device, learning_rate
