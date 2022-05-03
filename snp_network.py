@@ -74,54 +74,38 @@ def get_transformer(seq_len, max_seq_pos, vocab_size, batch_size, device):
 def get_train_test_simple(geno, pheno, test_split):
     pass
 
-# doesn't seem to help
-def get_train_test_large_control(geno, pheno, test_split):
-    # urate = pheno["urate"].values
+def get_train_test(geno, pheno, test_split, device):
+    urate = pheno["urate"].values
     gout = pheno["gout"].values
-
-    gout_mat_rows = np.where(gout)[0]
-    control_mat_rows = np.where(gout== False)[0]
-
-    gout_submat = geno.tok_mat[gout_mat_rows,:]
-    control_submat = geno.tok_mat[control_mat_rows,:]
-
-    test_cutoff = (int)(math.ceil(test_split * gout_submat.shape[0]))
-    positions = geno.positions
-
-    train_gout_mat = gout_submat[0:test_cutoff,]
-    train_gout_pheno = tensor(gout[gout_mat_rows[0:test_cutoff],])
-    training_gout_dataset = data.TensorDataset(
-        positions.repeat(len(train_gout_pheno), 1), train_gout_mat, train_gout_pheno.to(torch.int64)
+    test_cutoff = (int)(math.ceil(test_split * geno.tok_mat.shape[0]))
+    positions = tensor(geno.positions)
+    test_seqs = geno.tok_mat[:test_cutoff,]
+    test_phes = gout[:test_cutoff]
+    train_seqs = geno.tok_mat[test_cutoff:,]
+    train_phes = gout[test_cutoff:,]
+    print("seqs shape: ", train_seqs.shape)
+    print("phes shape: ", train_phes.shape)
+    # training_dataset = data.TensorDataset(
+    #     tensor(train_seqs, device=device), tensor(train_phes, dtype=torch.int64)
+    # )
+    # test_dataset = data.TensorDataset(
+    #     tensor(test_seqs, device=device), tensor(test_phes, dtype=torch.int64)
+    # )
+    training_dataset = data.TensorDataset(
+        positions.repeat(len(train_seqs), 1), tensor(train_seqs), tensor(train_phes, dtype=torch.int64)
     )
-
-    train_control_mat = control_submat[0:test_cutoff,]
-    train_control_pheno = tensor(gout[control_mat_rows[0:test_cutoff],])
-    training_control_dataset = data.TensorDataset(
-        positions.repeat(len(train_control_pheno), 1), train_control_mat, train_control_pheno.to(torch.int64)
+    test_dataset = data.TensorDataset(
+        positions.repeat(len(test_seqs), 1), tensor(test_seqs), tensor(test_phes, dtype=torch.int64)
     )
+    return training_dataset, test_dataset
 
-    test_gout_mat = gout_submat[test_cutoff:,]
-    test_gout_pheno = tensor(gout[gout_mat_rows[test_cutoff:],])
-    test_gout_dataset = data.TensorDataset(
-        positions.repeat(len(test_gout_pheno), 1), test_gout_mat, test_gout_pheno.to(torch.int64)
-    )
-
-    test_control_mat = control_submat[test_cutoff:,]
-    test_control_pheno = tensor(gout[control_mat_rows[test_cutoff:],])
-    test_control_dataset = data.TensorDataset(
-        positions.repeat(len(test_control_pheno), 1), test_control_mat, test_control_pheno.to(torch.int64)
-    )
-
-    return training_gout_dataset, training_control_dataset, test_gout_dataset, test_control_dataset
 
 def train_net(
-    net, training_gout_control, test_gout_control, batch_size, num_epochs, device, learning_rate
+    net, training_dataset, test_dataset, batch_size, num_epochs, device, learning_rate
 ):
     print("beginning training")
-    train_gout, train_control = training_gout_control
-    test_gout, test_control = test_gout_control
-    test_dataset = get_even_training_samples(test_gout, test_control)
-    test_iter = data.DataLoader(test_dataset, batch_size, shuffle=True)
+    training_iter = data.DataLoader(training_dataset, batch_size, shuffle=True)
+    test_iter = data.DataLoader(test_dataset, (int)(batch_size), shuffle=True)
     # trainer = torch.optim.SGD(net.parameters(), lr=learning_rate)
     # trainer = torch.optim.Adam(net.parameters(), lr=learning_rate)
     trainer = torch.optim.AdamW(net.parameters(), lr=learning_rate)
@@ -131,9 +115,6 @@ def train_net(
 
     print("starting training")
     for e in range(num_epochs):
-        # choose new control subsample each iter
-        training_dataset = get_even_training_samples(train_gout, train_control)
-        training_iter = data.DataLoader(training_dataset, batch_size, shuffle=True)
         # print("epoch {}".format(e))
         sum_loss = 0.0
         for pos, X, y in training_iter:
@@ -372,8 +353,8 @@ def get_data():
             pickle.dump(pheno, f, pickle.HIGHEST_PROTOCOL)
         print("done")
 
-    train_gout, train_control, test_gout, test_control = get_train_test_large_control(geno, pheno, 0.3)
-    return train_gout, train_control, test_gout, test_control, geno, pheno, enc_ver, control_scale
+    train, test = get_train_test(geno, pheno, 0.3)
+    return train, test, geno, pheno, enc_ver, control_scale
 
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -383,7 +364,7 @@ def main():
     home_dir = os.environ.get("HOME")
     os.chdir(home_dir + "/work/gout-transformer")
 
-    train_gout, train_control, test_gout, test_control, geno, pheno, enc_ver, control_scale = get_data()
+    train, test, geno, pheno, enc_ver, control_scale = get_data()
 
     batch_size = 180
     num_epochs = 50
@@ -396,10 +377,10 @@ def main():
     net = nn.DataParallel(net, use_device_ids).to(use_device_ids[0])
     # net = get_mlp(geno.tok_mat.shape[1], geno.num_toks, max_seq_pos, device)
 
-    print("train datasets: {} (gout) {} (control)".format(check_pos_neg_frac(train_gout), check_pos_neg_frac(train_control)))
-    print("test datasets: {} (gout) {} (control)".format(check_pos_neg_frac(test_gout), check_pos_neg_frac(test_control)))
+    print("train dataset: ", check_pos_neg_frac(train))
+    print("test dataset: ", check_pos_neg_frac(test))
 
-    train_net(net, (train_gout, train_control), (test_gout, test_control), batch_size, num_epochs, device, lr)
+    train_net(net, train, test, batch_size, num_epochs, device, lr)
 
     torch.save(net.state_dict(), net_name)
 
