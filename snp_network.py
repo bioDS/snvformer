@@ -74,7 +74,7 @@ def get_transformer(seq_len, max_seq_pos, vocab_size, batch_size, device):
 def get_train_test_simple(geno, pheno, test_split):
     pass
 
-def get_train_test(geno, pheno, test_split, device):
+def get_train_test(geno, pheno, test_split):
     urate = pheno["urate"].values
     gout = pheno["gout"].values
     test_cutoff = (int)(math.ceil(test_split * geno.tok_mat.shape[0]))
@@ -333,9 +333,8 @@ def dataset_random_n(set: data.TensorDataset, n: int):
 
 def get_data():
     enc_ver = 2
-    control_scale=1 # N.B. increasing seems to kill accuracy (~53%)
-    geno_file = plink_base + '_encv-' + str(enc_ver) + '_controlx-' + str(control_scale) + '_geno_cache.pickle'
-    pheno_file = plink_base +'_encv-' + str(enc_ver) + '_controlx-' + str(control_scale) +  '_pheno_cache.pickle'
+    geno_file = plink_base + '_encv-' + str(enc_ver) + '_geno_cache.pickle'
+    pheno_file = plink_base +'_encv-' + str(enc_ver) +  '_pheno_cache.pickle'
     if exists(geno_file) and exists(pheno_file):
         with open(geno_file, "rb") as f:
             geno = pickle.load(f)
@@ -344,7 +343,7 @@ def get_data():
     else:
         # geno, pheno = read_from_plink(small_set=True)
         print("reading data from plink")
-        geno, pheno = read_from_plink(small_set=False, subsample_control=True, encoding=enc_ver, control_set_relative_size=control_scale)
+        geno, pheno = read_from_plink(small_set=False, subsample_control=True, encoding=enc_ver)
         # geno_preprocessed_file = 
         print("done, writing to pickle")
         with open(geno_file, "wb") as f:
@@ -354,7 +353,7 @@ def get_data():
         print("done")
 
     train, test = get_train_test(geno, pheno, 0.3)
-    return train, test, geno, pheno, enc_ver, control_scale
+    return train, test, geno, pheno, enc_ver
 
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -364,13 +363,13 @@ def main():
     home_dir = os.environ.get("HOME")
     os.chdir(home_dir + "/work/gout-transformer")
 
-    train, test, geno, pheno, enc_ver, control_scale = get_data()
+    train, test, geno, pheno, enc_ver = get_data()
 
     batch_size = 180
     num_epochs = 50
     lr = 1e-7
-    net_name = "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_controlx-{}_net.pickle".format(
-        plink_base, str(enc_ver), batch_size, num_epochs, geno.tok_mat.shape[1], geno.tok_mat.shape[0], control_scale
+    net_name = "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_net.pickle".format(
+        plink_base, str(enc_ver), batch_size, num_epochs, geno.tok_mat.shape[1], geno.tok_mat.shape[0]
     )
     max_seq_pos = geno.positions.max()
     net = get_transformer(geno.tok_mat.shape[1], max_seq_pos, geno.num_toks, batch_size, device)
