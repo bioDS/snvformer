@@ -11,12 +11,6 @@ import os
 from snp_input import *
 from self_attention_net import *
 
-'''
-TODO: 
-- use snp positions properly
-- use full set of sequences (not small test subset)
-'''
-
 plink_base = os.environ['PLINK_FILE']
 
 class simple_mlp(nn.Module):
@@ -77,8 +71,11 @@ def get_transformer(seq_len, max_seq_pos, vocab_size, batch_size, device):
     )
     return net
 
+def get_train_test_simple(geno, pheno, test_split):
+    pass
 
-def get_train_test(geno, pheno, test_split):
+# doesn't seem to help
+def get_train_test_large_control(geno, pheno, test_split):
     # urate = pheno["urate"].values
     gout = pheno["gout"].values
 
@@ -120,7 +117,7 @@ def get_train_test(geno, pheno, test_split):
 
 def get_even_training_samples(train_gout: data.TensorDataset, train_control: data.TensorDataset):
     # control_subsample = train_control[np.random.choice(len(train_control), size=len(train_gout))]
-    control_subsample = data.Subset(train_control, np.random.choice(len(train_control), size=len(train_gout)))
+    control_subsample = data.Subset(train_control, np.random.choice(len(train_control), size=len(train_gout), replace=False))
     return data.ConcatDataset([train_gout, control_subsample], )
 
 def train_net(
@@ -175,7 +172,7 @@ def train_net(
                     test_loss += l.mean()
             print("{:.3} (test)".format(test_loss / len(test_iter)))
             print("random few train cases:")
-            for pos, tX, tY in data.Subset(training_dataset, np.random.choice(len(training_dataset), size=5)):
+            for pos, tX, tY in data.Subset(training_dataset, np.random.choice(len(training_dataset), size=5, replace=False)):
                 tX = tX.to(device).unsqueeze(0)
                 tY = tY.to(device).unsqueeze(0)
                 pos = pos.to(device).unsqueeze(0)
@@ -185,7 +182,7 @@ def train_net(
                     print("{:.3f}, \t {}".format(a[1].item(), b.item()))
 
     print("random few train cases:")
-    for pos, tX, tY in data.Subset(training_dataset, np.random.choice(len(training_dataset), size=10)):
+    for pos, tX, tY in data.Subset(training_dataset, np.random.choice(len(training_dataset), size=10, replace=False)):
         tX = tX.to(device).unsqueeze(0)
         tY = tY.to(device).unsqueeze(0)
         pos = pos.to(device).unsqueeze(0)
@@ -195,7 +192,7 @@ def train_net(
             print("{:.3f}, \t {}".format(a[1].item(), b.item()))
 
     print("random few test cases:")
-    for pos, tX, tY in data.Subset(test_dataset, np.random.choice(len(test_dataset), size=10)):
+    for pos, tX, tY in data.Subset(test_dataset, np.random.choice(len(test_dataset), size=10, replace=False)):
         tX = tX.to(device).unsqueeze(0)
         tY = tY.to(device).unsqueeze(0)
         pos = pos.to(device).unsqueeze(0)
@@ -262,7 +259,7 @@ def reduce_to_half(train):
     print("{} pos, {} neg".format(num_pos_cases, num_neg_cases))
     required_neg_cases = num_pos_cases
     # pos_sampler = data.RandomSampler(pos_training_cases, replacement=True, num_samples=required_addition_cases)
-    chosen_indices = np.random.choice(num_neg_cases, required_neg_cases)
+    chosen_indices = np.random.choice(num_neg_cases, required_neg_cases, replace=False)
     sampled_neg_cases = [neg_training_cases[i] for i in chosen_indices]
     # sampled_pos_cases = pos_training_cases[[i for i in pos_sampler]]
     new_train_cases = sampled_neg_cases
@@ -353,28 +350,17 @@ def translate_unknown(seqs, tok):
     return seqs
 
 def dataset_random_n(set: data.TensorDataset, n: int):
-    pos, x, y = set[np.random.choice(len(set), size=n)]
+    pos, x, y = set[np.random.choice(len(set), size=n, replace=False)]
     subset = data.TensorDataset(
         pos, x, y
     )
     return subset
 
-def main():
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    if (torch.cuda.device_count() > 1):
-        device = torch.device('cuda:1')
-    use_device_ids=[1,2,3,4,5,6]
-    # device = "cpu"
-    CLS_TOK = 3
-    UNK_TOK = 4
-    home_dir = os.environ.get("HOME")
-    os.chdir(home_dir + "/work/gout-transformer")
-
-    # from self_attention_net import *
-
-    use_ai_encoding = True
-    geno_file = plink_base + '_ai_enc-' + str(use_ai_encoding) + '_geno_cache.pickle'
-    pheno_file = plink_base +'_ai_enc-' + str(use_ai_encoding) +  '_pheno_cache.pickle'
+def get_data():
+    enc_ver = 2
+    control_scale=1 # N.B. increasing seems to kill accuracy (~53%)
+    geno_file = plink_base + '_encv-' + str(enc_ver) + '_controlx-' + str(control_scale) + '_geno_cache.pickle'
+    pheno_file = plink_base +'_encv-' + str(enc_ver) + '_controlx-' + str(control_scale) +  '_pheno_cache.pickle'
     if exists(geno_file) and exists(pheno_file):
         with open(geno_file, "rb") as f:
             geno = pickle.load(f)
@@ -383,7 +369,7 @@ def main():
     else:
         # geno, pheno = read_from_plink(small_set=True)
         print("reading data from plink")
-        geno, pheno = read_from_plink(small_set=False, subsample_control=True, use_ai_encoding=True)
+        geno, pheno = read_from_plink(small_set=False, subsample_control=True, encoding=enc_ver, control_set_relative_size=control_scale)
         # geno_preprocessed_file = 
         print("done, writing to pickle")
         with open(geno_file, "wb") as f:
@@ -392,20 +378,29 @@ def main():
             pickle.dump(pheno, f, pickle.HIGHEST_PROTOCOL)
         print("done")
 
-    gout_arr = np.array(pheno.gout)
-    gout_mat_rows = np.where(gout_arr)[0]
-    control_mat_rows = np.where(gout_arr == False)[0]
+    train_gout, train_control, test_gout, test_control = get_train_test_large_control(geno, pheno, 0.3)
+    return train_gout, train_control, test_gout, test_control, geno, pheno, enc_ver, control_scale
 
-    batch_size = 180 #TODO: make bigger
+def main():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    if (torch.cuda.device_count() > 1):
+        device = torch.device('cuda:1')
+    use_device_ids=[1,2,3,4,5,6]
+    home_dir = os.environ.get("HOME")
+    os.chdir(home_dir + "/work/gout-transformer")
+
+    train_gout, train_control, test_gout, test_control, geno, pheno, enc_ver, control_scale = get_data()
+
+    batch_size = 180
     num_epochs = 50
     lr = 1e-7
-    net_name = "{}_ai-{}_batch-{}_epochs-{}_p-{}_n-{}_net.pickle".format(plink_base, str(use_ai_encoding), batch_size, num_epochs, geno.tok_mat.shape[1], geno.tok_mat.shape[0])
+    net_name = "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_controlx-{}_net.pickle".format(
+        plink_base, str(enc_ver), batch_size, num_epochs, geno.tok_mat.shape[1], geno.tok_mat.shape[0], control_scale
+    )
     max_seq_pos = geno.positions.max()
-    net = get_transformer(geno.tok_mat.shape[1], max_seq_pos, geno.num_toks, batch_size, device) #TODO: maybe positions go too high?
+    net = get_transformer(geno.tok_mat.shape[1], max_seq_pos, geno.num_toks, batch_size, device)
     net = nn.DataParallel(net, use_device_ids).to(use_device_ids[0])
     # net = get_mlp(geno.tok_mat.shape[1], geno.num_toks, max_seq_pos, device)
-
-    train_gout, train_control, test_gout, test_control = get_train_test(geno, pheno, 0.3)
 
     print("train datasets: {} (gout) {} (control)".format(check_pos_neg_frac(train_gout), check_pos_neg_frac(train_control)))
     print("test datasets: {} (gout) {} (control)".format(check_pos_neg_frac(test_gout), check_pos_neg_frac(test_control)))

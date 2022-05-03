@@ -14,10 +14,14 @@ plink_base = os.environ['PLINK_FILE']
 urate_file = os.environ['URATE_FILE']
 
 class Tokenised_SNVs:
-    def __init__(self, geno, use_ai_encoding):
+    def __init__(self, geno, encoding: int):
         # val == 0 means we have two 'a0' vals
         # val == 2 means two 'a1' vals
         # val == 1 means one of each
+        if encoding == 2:
+            use_ai_encoding = True
+        else:
+            use_ai_encoding = False
         tok_mat, tok_to_string, string_to_tok, num_toks = get_tok_mat(geno, use_ai_encoding)
 
         self.string_to_tok = string_to_tok
@@ -26,7 +30,7 @@ class Tokenised_SNVs:
         self.num_toks = num_toks
         self.positions = torch.tensor(geno.pos.values, dtype=torch.long)
 
-def read_from_plink(remove_nan=False, small_set=False, subsample_control=True, use_ai_encoding=False):
+def read_from_plink(remove_nan=False, small_set=False, subsample_control=True, encoding: int = 2, control_set_relative_size=1):
     print("using data from:", data_dir)
     bed_file = gwas_dir+plink_base+".bed"
     bim_file = gwas_dir+plink_base+".bim"
@@ -52,7 +56,7 @@ def read_from_plink(remove_nan=False, small_set=False, subsample_control=True, u
         gout_cases = urate[urate.gout]["eid"]
         non_gout_cases = urate[urate.gout == False]["eid"]
         # non_gout_cases = np.where(urate.gout == False)[0]
-        non_gout_sample = np.random.choice(non_gout_cases, size=10*len(gout_cases), replace=False)
+        non_gout_sample = np.random.choice(non_gout_cases, size=control_set_relative_size*len(gout_cases), replace=False)
         sample_ids = list(set(gout_cases).union(non_gout_sample))
         urate = urate[urate["eid"].isin(sample_ids)]
         geno = geno[geno["sample"].isin(sample_ids)]
@@ -87,7 +91,7 @@ def read_from_plink(remove_nan=False, small_set=False, subsample_control=True, u
         geno_mat[np.isnan(geno_mat)] = most_common
 
     # we ideally want the position and the complete change
-    snv_toks = Tokenised_SNVs(geno, use_ai_encoding)
+    snv_toks = Tokenised_SNVs(geno, encoding)
 
     return snv_toks, urate
 
