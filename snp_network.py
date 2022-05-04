@@ -332,7 +332,7 @@ def dataset_random_n(set: data.TensorDataset, n: int):
     return subset
 
 def get_data():
-    enc_ver = 2
+    enc_ver = 3
     geno_file = plink_base + '_encv-' + str(enc_ver) + '_geno_cache.pickle'
     pheno_file = plink_base +'_encv-' + str(enc_ver) +  '_pheno_cache.pickle'
     if exists(geno_file) and exists(pheno_file):
@@ -366,11 +366,16 @@ def main():
     train, test, geno, pheno, enc_ver = get_data()
 
     batch_size = 180
-    num_epochs = 50
+    num_epochs = 100
     lr = 1e-7
     net_name = "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_net.pickle".format(
         plink_base, str(enc_ver), batch_size, num_epochs, geno.tok_mat.shape[1], geno.tok_mat.shape[0]
     )
+    with open(net_name + "_test.pickle", "wb") as f:
+        pickle.dump(test, f, pickle.HIGHEST_PROTOCOL)
+    with open(net_name + "_train.pickle", "wb") as f:
+        pickle.dump(train, f, pickle.HIGHEST_PROTOCOL)
+
     max_seq_pos = geno.positions.max()
     net = get_transformer(geno.tok_mat.shape[1], max_seq_pos, geno.num_toks, batch_size, device)
     net = nn.DataParallel(net, use_device_ids).to(use_device_ids[0])
