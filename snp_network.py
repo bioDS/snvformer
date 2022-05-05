@@ -108,8 +108,8 @@ def train_net(
     test_iter = data.DataLoader(test_dataset, (int)(batch_size), shuffle=True)
     # trainer = torch.optim.SGD(net.parameters(), lr=learning_rate)
     # trainer = torch.optim.Adam(net.parameters(), lr=learning_rate)
-    trainer = torch.optim.AdamW(net.parameters(), lr=learning_rate)
-    # trainer = torch.optim.AdamW(net.parameters(), lr=learning_rate, amsgrad=True) #TODO worth a try.
+    # trainer = torch.optim.AdamW(net.parameters(), lr=learning_rate)
+    trainer = torch.optim.AdamW(net.parameters(), lr=learning_rate, amsgrad=True) #TODO worth a try.
 
     loss = nn.CrossEntropyLoss()
 
@@ -332,7 +332,7 @@ def dataset_random_n(set: data.TensorDataset, n: int):
     return subset
 
 def get_data():
-    enc_ver = 3
+    enc_ver = 2
     geno_file = plink_base + '_encv-' + str(enc_ver) + '_geno_cache.pickle'
     pheno_file = plink_base +'_encv-' + str(enc_ver) +  '_pheno_cache.pickle'
     if exists(geno_file) and exists(pheno_file):
@@ -366,7 +366,7 @@ def main():
     train, test, geno, pheno, enc_ver = get_data()
 
     batch_size = 180
-    num_epochs = 100
+    num_epochs = 150
     lr = 1e-7
     net_name = "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_net.pickle".format(
         plink_base, str(enc_ver), batch_size, num_epochs, geno.tok_mat.shape[1], geno.tok_mat.shape[0]
