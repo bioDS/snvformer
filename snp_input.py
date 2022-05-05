@@ -89,4 +89,4 @@ def read_from_plink(remove_nan=False, small_set=False, subsample_control=True, e
     return snv_toks, urate
 
 if __name__ == "__main__":
-    snv_toks, urate = read_from_plink()
+    snv_toks, urate = read_from_plink(encoding=2)

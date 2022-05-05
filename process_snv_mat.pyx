@@ -4,17 +4,14 @@ import math
 from cython.parallel import prange
 cimport cython
 
-def enc_v3(p: int, a0, a1):
+def enc_v3(string_to_tok, tok_to_string, pos, p: int, a0, a1):
     a0_toks = np.zeros(p, dtype=np.int32)
     a1_toks = np.zeros(p, dtype=np.int32)
     a01_toks = np.zeros(p, dtype=np.int32)
-    string_to_tok = {}
-    tok_to_string = {}
 
     cdef int a_tok
     cdef int b_tok
     cdef int ab_tok
-    cdef int pos = 0
 
     for i,(a,b) in enumerate(zip(a0,a1)):
         a = str(a)
@@ -67,13 +64,10 @@ def enc_v3(p: int, a0, a1):
 # >1 seqs become "XI"
 # minor alleles shorter become 'del'
 # minor alleles longer become 'ins'
-def enc_v2(p: int, a0, a1):
+def enc_v2(string_to_tok, tok_to_string, pos, p: int, a0, a1):
     a0_toks = np.zeros(p, dtype=np.int32)
     a1_toks = np.zeros(p, dtype=np.int32)
     a01_toks = np.zeros(p, dtype=np.int32)
-    string_to_tok = {}
-    tok_to_string = {}
-    pos = 0
     for i,string in enumerate(a0):
         if (len(string) > 1):
             string = string[0] + 'I'
@@ -128,13 +122,10 @@ def enc_v2(p: int, a0, a1):
         a01_toks[i] = tok
     return a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok
 
-def enc_v1(p: int, a0, a1):
+def enc_v1(string_to_tok, tok_to_string, pos, p: int, a0, a1):
     a0_toks = np.zeros(p, dtype=np.int32)
     a1_toks = np.zeros(p, dtype=np.int32)
     a01_toks = np.zeros(p, dtype=np.int32)
-    string_to_tok = {}
-    tok_to_string = {}
-    pos = 0
     for i,string in enumerate(a0):
         if string in string_to_tok:
             tok = string_to_tok[string]
@@ -199,11 +190,11 @@ def get_tok_mat(geno, encoding: int = 2):
     print("identifying tokens")
 
     if (encoding == 1):
-        a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok = enc_v1(p, a0, a1)
+        a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok = enc_v1(string_to_tok, tok_to_string, pos, p, a0, a1)
     elif (encoding == 2):
-        a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok = enc_v2(p, a0, a1)
+        a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok = enc_v2(string_to_tok, tok_to_string, pos, p, a0, a1)
     elif (encoding == 3):
-        a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok = enc_v3(p, a0, a1)
+        a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok = enc_v3(string_to_tok, tok_to_string, pos, p, a0, a1)
 
     geno_mat = np.matrix(geno.values, dtype=np.int32)
     tok_mat = np.zeros((n, p), dtype=np.int32)
