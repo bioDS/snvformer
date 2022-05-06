@@ -101,7 +101,7 @@ def get_train_test(geno, pheno, test_split):
 
 
 def train_net(
-    net, training_dataset, test_dataset, batch_size, num_epochs, device, learning_rate
+    net, training_dataset, test_dataset, batch_size, num_epochs, device, learning_rate, prev_num_epochs, test_split
 ):
     print("beginning training")
     training_iter = data.DataLoader(training_dataset, batch_size, shuffle=True)
@@ -155,6 +155,11 @@ def train_net(
                 tzip = zip(tYh, tY)
                 for a, b in tzip:
                     print("{:.3f}, \t {}".format(a[1].item(), b.item()))
+            
+            net_file = "net_epochs/{}_batch-{}_epoch-{}_test_split-{}_net.pickle".format(
+                plink_base, batch_size, e + prev_num_epochs, test_split
+            )
+            torch.save(net.state_dict(), net_file)
 
     print("random few train cases:")
     for pos, tX, tY in data.Subset(training_dataset, np.random.choice(len(training_dataset), size=10, replace=False)):
@@ -331,8 +336,7 @@ def dataset_random_n(set: data.TensorDataset, n: int):
     )
     return subset
 
-def get_data():
-    enc_ver = 2
+def get_data(enc_ver, test_split):
     geno_file = plink_base + '_encv-' + str(enc_ver) + '_geno_cache.pickle'
     pheno_file = plink_base +'_encv-' + str(enc_ver) +  '_pheno_cache.pickle'
     if exists(geno_file) and exists(pheno_file):
@@ -352,41 +356,64 @@ def get_data():
             pickle.dump(pheno, f, pickle.HIGHEST_PROTOCOL)
         print("done")
 
-    train, test = get_train_test(geno, pheno, 0.3)
+    train, test = get_train_test(geno, pheno, test_split)
     return train, test, geno, pheno, enc_ver
 
 def main():
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    if (torch.cuda.device_count() > 1):
-        device = torch.device('cuda:1')
-    use_device_ids=[1,2,3,4,5,6]
+    # device = "cuda" if torch.cuda.is_available() else "cpu"
+    # if (torch.cuda.device_count() > 1):
+    #     device = torch.device('cuda:1')
+    use_device_ids=[4]
+    device = use_device_ids[0]
     home_dir = os.environ.get("HOME")
     os.chdir(home_dir + "/work/gout-transformer")
 
-    train, test, geno, pheno, enc_ver = get_data()
+    # test_split = 0.3
+    test_split = 0.05 #TODO: just for testing
+    train, test, geno, pheno, enc_ver = get_data(2, test_split)
 
-    batch_size = 180
+    batch_size = 20
     num_epochs = 150
     lr = 1e-7
-    net_name = "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_net.pickle".format(
-        plink_base, str(enc_ver), batch_size, num_epochs, geno.tok_mat.shape[1], geno.tok_mat.shape[0]
+
+    new_epoch = num_epochs
+    new_net_name = "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_test_split-{}_net.pickle".format(
+        plink_base, str(enc_ver), batch_size, num_epochs, geno.tok_mat.shape[1], geno.tok_mat.shape[0], new_epoch, test_split
     )
-    with open(net_name + "_test.pickle", "wb") as f:
-        pickle.dump(test, f, pickle.HIGHEST_PROTOCOL)
-    with open(net_name + "_train.pickle", "wb") as f:
-        pickle.dump(train, f, pickle.HIGHEST_PROTOCOL)
 
     max_seq_pos = geno.positions.max()
+    # continue_training = True
+    continue_training = False
+
     net = get_transformer(geno.tok_mat.shape[1], max_seq_pos, geno.num_toks, batch_size, device)
-    net = nn.DataParallel(net, use_device_ids).to(use_device_ids[0])
+    net = nn.DataParallel(net, use_device_ids)
+    if (continue_training):
+        prev_epoch = 150
+        prev_batch_size = 180
+        prev_net_name = "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_test_split-{}_net.pickle".format(
+            plink_base, str(enc_ver), prev_batch_size, num_epochs, geno.tok_mat.shape[1], geno.tok_mat.shape[0], prev_epoch, test_split
+    )
+        net.load_state_dict(torch.load(prev_net_name))
+        new_epoch = prev_epoch + num_epochs
+        new_net_name = "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_net.pickle".format(
+            plink_base, str(enc_ver), batch_size, num_epochs, geno.tok_mat.shape[1], geno.tok_mat.shape[0], new_epoch
+        )
+    else:
+        prev_epoch = 0
+        with open(new_net_name + "_test.pickle", "wb") as f:
+            pickle.dump(test, f, pickle.HIGHEST_PROTOCOL)
+        with open(new_net_name + "_train.pickle", "wb") as f:
+            pickle.dump(train, f, pickle.HIGHEST_PROTOCOL)
+    net = net.to(use_device_ids[0])
+
+    train_net(net, train, test, batch_size, num_epochs, device, lr, prev_epoch, test_split)
     # net = get_mlp(geno.tok_mat.shape[1], geno.num_toks, max_seq_pos, device)
 
     print("train dataset: ", check_pos_neg_frac(train))
     print("test dataset: ", check_pos_neg_frac(test))
 
-    train_net(net, train, test, batch_size, num_epochs, device, lr)
 
-    torch.save(net.state_dict(), net_name)
+    torch.save(net.state_dict(), new_net_name)
 
 if __name__ == "__main__":
     main()
