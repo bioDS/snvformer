@@ -55,7 +55,7 @@ def get_mlp(in_size, vocab_size, max_seq_pos, device):
     return net
 
 
-def get_transformer(seq_len, max_seq_pos, vocab_size, batch_size, device):
+def get_transformer(seq_len, max_seq_pos, vocab_size, batch_size, device, output):
     net = TransformerModel(
         seq_len,
         max_seq_pos,
@@ -65,7 +65,7 @@ def get_transformer(seq_len, max_seq_pos, vocab_size, batch_size, device):
         vocab_size=vocab_size,
         batch_size=batch_size,
         device=device,
-        output_type="binary",
+        output_type=output,
         use_linformer=True,
         linformer_k=64,
     )
@@ -363,35 +363,39 @@ def main():
     # device = "cuda" if torch.cuda.is_available() else "cpu"
     # if (torch.cuda.device_count() > 1):
     #     device = torch.device('cuda:1')
-    use_device_ids=[4]
+    use_device_ids=[5,6]
     device = use_device_ids[0]
     home_dir = os.environ.get("HOME")
     os.chdir(home_dir + "/work/gout-transformer")
 
-    # test_split = 0.3
-    test_split = 0.05 #TODO: just for testing
+    test_split = 0.3
+    # test_split = 0.05 #TODO: just for testing
     train, test, geno, pheno, enc_ver = get_data(2, test_split)
 
-    batch_size = 20
+    batch_size = 60
     num_epochs = 150
     lr = 1e-7
+    # output = "tok"
+    output = "binary"
 
     new_epoch = num_epochs
-    new_net_name = "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_test_split-{}_net.pickle".format(
-        plink_base, str(enc_ver), batch_size, num_epochs, geno.tok_mat.shape[1], geno.tok_mat.shape[0], new_epoch, test_split
+    new_net_name = "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_test_split-{}_output-{}_net.pickle".format(
+        plink_base, str(enc_ver), batch_size, num_epochs,
+        geno.tok_mat.shape[1], geno.tok_mat.shape[0], new_epoch,
+        test_split, output
     )
 
     max_seq_pos = geno.positions.max()
     # continue_training = True
     continue_training = False
 
-    net = get_transformer(geno.tok_mat.shape[1], max_seq_pos, geno.num_toks, batch_size, device)
+    net = get_transformer(geno.tok_mat.shape[1], max_seq_pos, geno.num_toks, batch_size, device, output)
     net = nn.DataParallel(net, use_device_ids)
     if (continue_training):
-        prev_epoch = 150
-        prev_batch_size = 180
+        prev_epoch = 300
+        prev_batch_size = 90
         prev_net_name = "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_test_split-{}_net.pickle".format(
-            plink_base, str(enc_ver), prev_batch_size, num_epochs, geno.tok_mat.shape[1], geno.tok_mat.shape[0], prev_epoch, test_split
+            plink_base, str(enc_ver), prev_batch_size, prev_epoch, geno.tok_mat.shape[1], geno.tok_mat.shape[0], prev_epoch, test_split
     )
         net.load_state_dict(torch.load(prev_net_name))
         new_epoch = prev_epoch + num_epochs
