@@ -14,6 +14,7 @@ from snp_network import get_data, get_transformer
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+from sklearn import metrics
 
 
 plink_base = os.environ['PLINK_FILE']
@@ -28,10 +29,17 @@ batch_size = 10
 # net_file = "genotyped_p1e-1_encv-2_batch-180_epochs-100_p-65803_n-18776_net.pickle"
 # net_file = "genotyped_p1e-1_encv-3_batch-180_epochs-100_p-65803_n-18776_net.pickle"
 # net_file = "genotyped_p1e-1_encv-2_batch-180_epochs-150_p-65803_n-18776_net.pickle"
-net_file = "66k_gwas_encv-2_batch-180_epochs-150_p-65803_n-18776_net.pickle"
+# net_file = "genotyped_p1e-1_encv-2_batch-90_epochs-300_p-65803_n-18776_epoch-300_net.pickle"
+# net_file = "66k_gwas_encv-2_batch-180_epochs-150_p-65803_n-18776_net.pickle"
+# net_file = "use_net.pickle"
+# net_file = "66k_gwas_encv-2_batch-20_epochs-100_p-65803_n-18776_epoch-100_test_split-0.05_net.pickle"
+net_file = "66k_gwas_encv-2_batch-90_epochs-150_p-65803_n-18776_epoch-300_net.pickle"
+# net_file = "66k_gwas_batch-90_epoch-210_net.pickle"
+# net_file = "66k_gwas_batch-90_epoch-210_net.pickle"
 with open(net_file + "_test.pickle", "rb") as f:
     test = pickle.load(f)
-with open("genotyped_p1e-1_encv-2_geno_cache.pickle", "rb") as f:
+# with open("genotyped_p1e-1_encv-2_geno_cache.pickle", "rb") as f:
+with open("66k_gwas_encv-2_geno_cache.pickle", "rb") as f:
     geno = pickle.load(f)
 
 # net_name = "{}_ai-{}_batch-{}_epochs-{}_p-{}_n-{}_controlx-{}_net.pickle".format(
@@ -41,9 +49,9 @@ with open("genotyped_p1e-1_encv-2_geno_cache.pickle", "rb") as f:
 # net_file = "new_enc_50_epochs_0596_test_network.pickle"
 
 max_seq_pos = geno.positions.max()
-use_device_ids = [1]
+use_device_ids = [0,6]
 device = torch.device('cuda:{}'.format(use_device_ids[0]))
-net = get_transformer(geno.tok_mat.shape[1], max_seq_pos, geno.num_toks, batch_size, device)
+net = get_transformer(geno.tok_mat.shape[1], max_seq_pos, geno.num_toks, batch_size, device, "binary")
 net = nn.DataParallel(net, use_device_ids).to(use_device_ids[0])
 net.load_state_dict(torch.load(net_file))
 net = net.to(device)
@@ -73,7 +81,7 @@ print("total predicted gout cases: {}".format(len(pred_gout)))
 print("fraction of predicted gout cases correct: {:.4f}".format(np.sum(pred_gout["Correct"])/len(pred_gout)))
 
 non_gout = test_results[test_results["Predicted"] == False]
-print("total predicted gout cases: {}".format(len(non_gout)))
+print("total predicted non gout cases: {}".format(len(non_gout)))
 print("fraction of predicted non-gout cases correct: {:.4f}".format(np.sum(non_gout["Correct"])/len(non_gout)))
 
 sns.set_theme(style="whitegrid")
@@ -123,3 +131,30 @@ ax.set_xlabel("Score $\\times 10^{-1}$")
 plt.tight_layout()
 plt.savefig(net_file + "score_vs_tp.pdf")
 plt.savefig(net_file + "score_vs_tp.png")
+
+# AUROC
+auroc = metrics.roc_auc_score(actual_vals, nn_scores)
+fpr, tpr, _ = metrics.roc_curve(actual_vals, nn_scores)
+print("auroc: {}".format(auroc))
+
+plt.close()
+plt.figure()
+fig, ax = plt.subplots(figsize=(4,4))
+plt.plot(
+    fpr,
+    tpr,
+    color="darkorange",
+    # lw=2,
+    label="ROC curve (area = %0.2f)" % auroc,
+)
+plt.plot([0, 1], [0, 1])
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel("False Positive Rate")
+plt.ylabel("True Positive Rate")
+plt.title("ROC")
+plt.legend(loc="lower right")
+plt.show()
+plt.tight_layout()
+plt.savefig("roc.pdf")
+plt.savefig("roc.png")
