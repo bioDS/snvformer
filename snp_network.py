@@ -179,6 +179,7 @@ def train_net(
                 tX = tX.to(device).unsqueeze(0)
                 tY = tY.to(device).unsqueeze(0)
                 pos = pos.to(device).unsqueeze(0)
+                phenos = phenos.to(device).unsqueeze(0)
                 tYh = net(phenos, tX, pos)
                 tzip = zip(tYh, tY)
                 for a, b in tzip:
@@ -194,6 +195,7 @@ def train_net(
         tX = tX.to(device).unsqueeze(0)
         tY = tY.to(device).unsqueeze(0)
         pos = pos.to(device).unsqueeze(0)
+        phenos = phenos.to(device).unsqueeze(0)
         tYh = net(phenos, tX, pos)
         tzip = zip(tYh, tY)
         for a, b in tzip:
@@ -204,6 +206,7 @@ def train_net(
         tX = tX.to(device).unsqueeze(0)
         tY = tY.to(device).unsqueeze(0)
         pos = pos.to(device).unsqueeze(0)
+        phenos = phenos.to(device).unsqueeze(0)
         tYh = net(phenos, tX, pos)
         tzip = zip(tYh, tY)
         for a, b in tzip:
@@ -213,9 +216,11 @@ def train_net(
     test_total_correct = 0.0
     test_total_incorrect = 0.0
     with torch.no_grad():
-        for pos, tX, tY in test_iter:
+        for phenos, pos, tX, tY in test_iter:
+            pos = pos.to(device)
+            phenos = phenos.to(device)
             tX = tX.to(device)
-            tYh = net(tX, pos)
+            tYh = net(phenos, tX, pos)
             binary_tYh = tYh[:, 1] > 0.5
             binary_tY = tY > 0.5
             binary_tY = binary_tY.to(device)
@@ -226,9 +231,11 @@ def train_net(
     train_total_correct = 0.0
     train_total_incorrect = 0.0
     with torch.no_grad():
-        for pos, tX, tY in training_iter:
+        for phenos, pos, tX, tY in training_iter:
             tX = tX.to(device)
-            tYh = net(tX, pos)
+            pos = pos.to(device)
+            phenos = phenos.to(device)
+            tYh = net(phenos, tX, pos)
             binary_tYh = tYh[:, 1] > 0.5
             binary_tY = tY > 0.5
             binary_tY = binary_tY.to(device)
