@@ -347,7 +347,7 @@ def amplify_to_half(train):
 
 def check_pos_neg_frac(dataset: data.TensorDataset):
     pos, neg, unknown = 0, 0, 0
-    for (_, _, y) in dataset:
+    for (_, _, _, y) in dataset:
         if y == 1:
             pos = pos + 1
         elif y == 0:
@@ -411,7 +411,7 @@ def main():
     train, test, geno, pheno, enc_ver = get_data(2, test_split)
 
     batch_size = 60
-    num_epochs = 2
+    num_epochs = 200
     lr = 1e-7
     # output = "tok"
     output = "binary"
@@ -449,12 +449,11 @@ def main():
             pickle.dump(train, f, pickle.HIGHEST_PROTOCOL)
     net = net.to(use_device_ids[0])
 
-    train_net(net, train, test, batch_size, num_epochs, device, lr, prev_epoch, test_split)
-    # net = get_mlp(geno.tok_mat.shape[1], geno.num_toks, max_seq_pos, device)
-
     print("train dataset: ", check_pos_neg_frac(train))
     print("test dataset: ", check_pos_neg_frac(test))
 
+    train_net(net, train, test, batch_size, num_epochs, device, lr, prev_epoch, test_split)
+    # net = get_mlp(geno.tok_mat.shape[1], geno.num_toks, max_seq_pos, device)
 
     torch.save(net.state_dict(), new_net_name)
 
