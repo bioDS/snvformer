@@ -12,6 +12,7 @@ from snp_input import *
 from self_attention_net import *
 
 plink_base = os.environ['PLINK_FILE']
+cache_dir = "./cache/"
 
 class simple_mlp(nn.Module):
     def __init__(self, in_size, num_hiddens, depth, vocab_size, embed_dim, max_seq_pos, device) -> None:
@@ -55,9 +56,10 @@ def get_mlp(in_size, vocab_size, max_seq_pos, device):
     return net
 
 
-def get_transformer(seq_len, max_seq_pos, vocab_size, batch_size, device, output):
+def get_transformer(seq_len, num_phenos, max_seq_pos, vocab_size, batch_size, device, output):
     net = TransformerModel(
         seq_len,
+        num_phenos,
         max_seq_pos,
         embed_dim=64,
         num_heads=4,
@@ -74,17 +76,43 @@ def get_transformer(seq_len, max_seq_pos, vocab_size, batch_size, device, output
 def get_train_test_simple(geno, pheno, test_split):
     pass
 
-def get_train_test(geno, pheno, test_split):
-    urate = pheno["urate"].values
+def get_train_test(input_phenos, geno, pheno, test_split):
+    # urate = pheno["urate"].values
     gout = pheno["gout"].values
-    test_cutoff = (int)(math.ceil(test_split * geno.tok_mat.shape[0]))
+    # test_cutoff = (int)(math.ceil(test_split * geno.tok_mat.shape[0]))
+
+    test_num_gout = (int)(math.ceil(np.sum(gout)*test_split))
+    train_num_gout = np.sum(gout) - test_num_gout
+    train_gout_pos = np.random.choice(np.where(gout)[0], train_num_gout, replace=False)
+    test_gout_pos = np.setdiff1d(np.where(gout), train_gout_pos)
+    train_gout_pos.sort()
+    test_gout_pos.sort()
+
+    train_control_pos = np.random.choice(np.where(gout == False)[0], train_num_gout, replace=False)
+    test_control_pos = np.random.choice(np.setdiff1d(np.where(gout == False)[0], train_control_pos), test_num_gout, replace=False)
+    train_control_pos.sort()
+    test_control_pos.sort()
+
+    train_all_pos = np.concatenate([train_control_pos, train_gout_pos])
+    test_all_pos = np.concatenate([test_control_pos, test_gout_pos])
+
     positions = tensor(geno.positions)
-    test_seqs = geno.tok_mat[:test_cutoff,]
-    test_phes = gout[:test_cutoff]
-    train_seqs = geno.tok_mat[test_cutoff:,]
-    train_phes = gout[test_cutoff:,]
+    test_seqs = geno.tok_mat[test_all_pos,]
+    test_phes = gout[test_all_pos]
+    train_seqs = geno.tok_mat[train_all_pos]
+    train_phes = gout[train_all_pos]
     print("seqs shape: ", train_seqs.shape)
     print("phes shape: ", train_phes.shape)
+
+    age = input_phenos["age"]
+    # 0 == Male, 1 == Female
+    sex = torch.tensor(input_phenos["sex"].values == "Female", dtype=torch.int64)
+    input_pheno_vec = torch.tensor([
+        age.values,
+        sex,
+    ], dtype=torch.int64).t()
+    train_pheno_vec = input_pheno_vec[train_all_pos,]
+    test_pheno_vec = input_pheno_vec[test_all_pos,]
     # training_dataset = data.TensorDataset(
     #     tensor(train_seqs, device=device), tensor(train_phes, dtype=torch.int64)
     # )
@@ -92,10 +120,10 @@ def get_train_test(geno, pheno, test_split):
     #     tensor(test_seqs, device=device), tensor(test_phes, dtype=torch.int64)
     # )
     training_dataset = data.TensorDataset(
-        positions.repeat(len(train_seqs), 1), tensor(train_seqs), tensor(train_phes, dtype=torch.int64)
+        train_pheno_vec, positions.repeat(len(train_seqs), 1), tensor(train_seqs), tensor(train_phes, dtype=torch.int64)
     )
     test_dataset = data.TensorDataset(
-        positions.repeat(len(test_seqs), 1), tensor(test_seqs), tensor(test_phes, dtype=torch.int64)
+        test_pheno_vec, positions.repeat(len(test_seqs), 1), tensor(test_seqs), tensor(test_phes, dtype=torch.int64)
     )
     return training_dataset, test_dataset
 
@@ -117,12 +145,12 @@ def train_net(
     for e in range(num_epochs):
         # print("epoch {}".format(e))
         sum_loss = 0.0
-        for pos, X, y in training_iter:
+        for phenos, pos, X, y in training_iter:
             # X = X.t()
             X = X.to(device)
             y = y.to(device)
             pos = pos.to(device)
-            Yh = net(X, pos)  # two-value softmax (binary classification)
+            Yh = net(phenos, X, pos)  # two-value softmax (binary classification)
             l = loss(Yh, y)
             trainer.zero_grad()
             l.mean().backward()
@@ -137,21 +165,21 @@ def train_net(
             )
             test_loss = 0.0
             with torch.no_grad():
-                for pos, X, y in test_iter:
+                for phenos, pos, X, y in test_iter:
                     # X = X.t()
                     X = X.to(device)
                     y = y.to(device)
                     pos = pos.to(device)
-                    Yh = net(X, pos)  # two-value softmax (binary classification)
+                    Yh = net(phenos, X, pos)  # two-value softmax (binary classification)
                     l = loss(Yh, y)
                     test_loss += l.mean()
             print("{:.3} (test)".format(test_loss / len(test_iter)))
             print("random few train cases:")
-            for pos, tX, tY in data.Subset(training_dataset, np.random.choice(len(training_dataset), size=5, replace=False)):
+            for phenos, pos, tX, tY in data.Subset(training_dataset, np.random.choice(len(training_dataset), size=5, replace=False)):
                 tX = tX.to(device).unsqueeze(0)
                 tY = tY.to(device).unsqueeze(0)
                 pos = pos.to(device).unsqueeze(0)
-                tYh = net(tX, pos)
+                tYh = net(phenos, tX, pos)
                 tzip = zip(tYh, tY)
                 for a, b in tzip:
                     print("{:.3f}, \t {}".format(a[1].item(), b.item()))
@@ -162,21 +190,21 @@ def train_net(
             torch.save(net.state_dict(), net_file)
 
     print("random few train cases:")
-    for pos, tX, tY in data.Subset(training_dataset, np.random.choice(len(training_dataset), size=10, replace=False)):
+    for phenos, pos, tX, tY in data.Subset(training_dataset, np.random.choice(len(training_dataset), size=10, replace=False)):
         tX = tX.to(device).unsqueeze(0)
         tY = tY.to(device).unsqueeze(0)
         pos = pos.to(device).unsqueeze(0)
-        tYh = net(tX, pos)
+        tYh = net(phenos, tX, pos)
         tzip = zip(tYh, tY)
         for a, b in tzip:
             print("{:.3f}, \t {}".format(a[1].item(), b.item()))
 
     print("random few test cases:")
-    for pos, tX, tY in data.Subset(test_dataset, np.random.choice(len(test_dataset), size=10, replace=False)):
+    for phenos, pos, tX, tY in data.Subset(test_dataset, np.random.choice(len(test_dataset), size=10, replace=False)):
         tX = tX.to(device).unsqueeze(0)
         tY = tY.to(device).unsqueeze(0)
         pos = pos.to(device).unsqueeze(0)
-        tYh = net(tX, pos)
+        tYh = net(phenos, tX, pos)
         tzip = zip(tYh, tY)
         for a, b in tzip:
             print("{:.3f}, \t {}".format(a[1].item(), b.item()))
@@ -337,33 +365,36 @@ def dataset_random_n(set: data.TensorDataset, n: int):
     return subset
 
 def get_data(enc_ver, test_split):
-    geno_file = plink_base + '_encv-' + str(enc_ver) + '_geno_cache.pickle'
-    pheno_file = plink_base +'_encv-' + str(enc_ver) +  '_pheno_cache.pickle'
-    if exists(geno_file) and exists(pheno_file):
-        with open(geno_file, "rb") as f:
-            geno = pickle.load(f)
-        with open(pheno_file, "rb") as f:
-            pheno = pickle.load(f)
+    train_phenos_file = cache_dir + plink_base + '_encv-' + str(enc_ver) + '_train_phenos_cache.pickle'
+    X_file = cache_dir + plink_base + '_encv-' + str(enc_ver) + '_X_cache.pickle'
+    Y_file = cache_dir + plink_base +'_encv-' + str(enc_ver) +  '_Y_cache.pickle'
+    if exists(X_file) and exists(Y_file) and exists(train_phenos_file):
+        with open(X_file, "rb") as f:
+            X = pickle.load(f)
+        with open(Y_file, "rb") as f:
+            Y = pickle.load(f)
+        with open(train_phenos_file, "rb") as f:
+            train_phenos = pickle.load(f)
     else:
-        # geno, pheno = read_from_plink(small_set=True)
         print("reading data from plink")
-        geno, pheno = read_from_plink(small_set=False, subsample_control=True, encoding=enc_ver)
-        # geno_preprocessed_file = 
+        train_phenos, X, Y = read_from_plink(small_set=False, subsample_control=True, encoding=enc_ver)
         print("done, writing to pickle")
-        with open(geno_file, "wb") as f:
-            pickle.dump(geno, f, pickle.HIGHEST_PROTOCOL)
-        with open(pheno_file, "wb") as f:
-            pickle.dump(pheno, f, pickle.HIGHEST_PROTOCOL)
+        with open(train_phenos_file, "wb") as f:
+            pickle.dump(train_phenos, f, pickle.HIGHEST_PROTOCOL)
+        with open(X_file, "wb") as f:
+            pickle.dump(X, f, pickle.HIGHEST_PROTOCOL)
+        with open(Y_file, "wb") as f:
+            pickle.dump(Y, f, pickle.HIGHEST_PROTOCOL)
         print("done")
 
-    train, test = get_train_test(geno, pheno, test_split)
-    return train, test, geno, pheno, enc_ver
+    train, test = get_train_test(train_phenos, X, Y, test_split)
+    return train, test, X, Y, enc_ver
 
 def main():
     # device = "cuda" if torch.cuda.is_available() else "cpu"
     # if (torch.cuda.device_count() > 1):
     #     device = torch.device('cuda:1')
-    use_device_ids=[5,6]
+    use_device_ids=[0,6]
     device = use_device_ids[0]
     home_dir = os.environ.get("HOME")
     os.chdir(home_dir + "/work/gout-transformer")
@@ -373,7 +404,7 @@ def main():
     train, test, geno, pheno, enc_ver = get_data(2, test_split)
 
     batch_size = 60
-    num_epochs = 150
+    num_epochs = 2
     lr = 1e-7
     # output = "tok"
     output = "binary"
@@ -389,7 +420,8 @@ def main():
     # continue_training = True
     continue_training = False
 
-    net = get_transformer(geno.tok_mat.shape[1], max_seq_pos, geno.num_toks, batch_size, device, output)
+    num_phenos = 2
+    net = get_transformer(geno.tok_mat.shape[1], num_phenos, max_seq_pos, geno.num_toks, batch_size, device, output)
     net = nn.DataParallel(net, use_device_ids)
     if (continue_training):
         prev_epoch = 300

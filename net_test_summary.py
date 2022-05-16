@@ -144,7 +144,6 @@ plt.plot(
     fpr,
     tpr,
     color="darkorange",
-    # lw=2,
     label="ROC curve (area = %0.2f)" % auroc,
 )
 plt.plot([0, 1], [0, 1])

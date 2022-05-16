@@ -36,7 +36,7 @@ class One_Hot_Embedding:
         return torch.nn.functional.one_hot(t.long(), num_classes=self.num_classes)
 
 class TransformerModel(nn.Module):
-    def __init__(self, seq_len, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, output_type, use_linformer=False, linformer_k=16) -> None:
+    def __init__(self, seq_len, num_phenos, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, output_type, use_linformer=False, linformer_k=16) -> None:
         super().__init__()
         self.device = device
         # self.embedding = nn.Embedding(vocab_size, embedding_dim=embed_dim)
@@ -49,7 +49,7 @@ class TransformerModel(nn.Module):
         self.pos_encoding = ExplicitPositionalEncoding(self.pos_size, max_len=max_seq_pos+1)
         self.blocks = []
         for _ in range(num_layers):
-            new_block = TransformerBlock(seq_len, embed_dim, num_heads, vocab_size, batch_size, device, use_linformer, linformer_k)
+            new_block = TransformerBlock(seq_len+num_phenos, embed_dim, num_heads, vocab_size, batch_size, device, use_linformer, linformer_k)
             self.blocks.append(new_block)
         self.blocks = nn.ModuleList(self.blocks)
         self.output_type = output_type
@@ -59,7 +59,7 @@ class TransformerModel(nn.Module):
             self.softmax = nn.Softmax(1)
             self.final_layer = nn.Sequential(dense, self.softmax)
         elif output_type == 'binary':
-            dense = nn.Linear(embed_dim*seq_len, 2)
+            dense = nn.Linear(embed_dim*(seq_len+num_phenos), 2)
             self.softmax = nn.Softmax(1)
             self.final_layer = nn.Sequential(dense, self.softmax)
             # pass
@@ -67,15 +67,19 @@ class TransformerModel(nn.Module):
             # dense1 = nn.Linear(num_hiddens, 1, device=device)
             # dense2 = nn.Linear(seq_len, 1, device=device)
             # self.final_layer = nn.Sequential(dense1, dense2)
-            self.final_layer = nn.Linear(seq_len*embed_dim, 1)
+            self.final_layer = nn.Linear((seq_len+num_phenos)*embed_dim, 1)
         else:
-            raise ValueError("output_type must be 'binary' or 'continuous'")
+            raise ValueError("output_type must be 'binary', 'tok', or 'continuous'")
 
-    def forward(self, x, pos):
+    def forward(self, phenos, x, pos):
         # ex = self.embedding(x.t()).swapaxes(0,1)
         ex = self.embedding(x)
+        if (ex.shape[2] != 32):
+            print("ex.shape[2]: {}".format(ex.shape[2]))
         ep = self.pos_encoding(torch.zeros([x.shape[0], x.shape[1], self.pos_size], device=x.device), pos)
+        phenos = torch.unsqueeze(phenos, 2).expand(-1,-1, self.pos_size + ex.shape[2])
         at = torch.cat([ex, ep], dim=2)
+        at = torch.cat([phenos, at], dim=1)
         for block in self.blocks:
             at = block(at)
         if self.output_type == "tok":

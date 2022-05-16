@@ -38,24 +38,29 @@ def read_from_plink(remove_nan=False, small_set=False, subsample_control=True, e
     withdrawn_ids = pandas.read_csv(data_dir + "w12611_20220222.csv", header=None, names=["ids"])
 
     usable_ids = list(set(urate_tmp.eid) - set(withdrawn_ids.ids))
-    urate = urate_tmp[urate_tmp["eid"].isin(usable_ids)]
+    phenos = urate_tmp[urate_tmp["eid"].isin(usable_ids)]
     del urate_tmp
+    # avail_phenos = urate
     geno = geno_tmp[geno_tmp["sample"].isin(usable_ids)]
     del geno_tmp
     if small_set:
         num_samples = 1000
         num_snps = 200
         geno = geno[0:num_samples, 0:num_snps]
-        urate = urate[0:num_samples]
+        phenos = phenos[0:num_samples]
 
     if (subsample_control):
-        gout_cases = urate[urate.gout]["eid"]
-        non_gout_cases = urate[urate.gout == False]["eid"]
+        gout_cases = phenos[phenos.gout]["eid"]
+        non_gout_cases = phenos[phenos.gout == False]["eid"]
         # non_gout_cases = np.where(urate.gout == False)[0]
         non_gout_sample = np.random.choice(non_gout_cases, size=len(gout_cases), replace=False)
         sample_ids = list(set(gout_cases).union(non_gout_sample))
-        urate = urate[urate["eid"].isin(sample_ids)]
+        # urate = urate[urate["eid"].isin(sample_ids)]
+        phenos = phenos[phenos["eid"].isin(sample_ids)]
         geno = geno[geno["sample"].isin(sample_ids)]
+
+    urate = phenos["urate"]
+    train_phenos = phenos[["age", "sex"]]
 
     geno_mat = geno.values
     positions = np.asarray(geno.pos)
@@ -78,7 +83,7 @@ def read_from_plink(remove_nan=False, small_set=False, subsample_control=True, e
             100.0 * num_nan / total_num,
         )
     )
-    print("{:.2f}% has gout".format(100 * np.sum(urate.gout) / len(urate)))
+    print("{:.2f}% has gout".format(100 * np.sum(phenos.gout) / len(phenos)))
 
     if remove_nan:
         geno_mat[np.isnan(geno_mat)] = most_common
@@ -86,7 +91,7 @@ def read_from_plink(remove_nan=False, small_set=False, subsample_control=True, e
     # we ideally want the position and the complete change
     snv_toks = Tokenised_SNVs(geno, encoding)
 
-    return snv_toks, urate
+    return train_phenos, snv_toks, phenos
 
 if __name__ == "__main__":
     snv_toks, urate = read_from_plink(encoding=2)
