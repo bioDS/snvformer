@@ -424,22 +424,22 @@ def main():
     )
 
     max_seq_pos = geno.positions.max()
-    # continue_training = True
-    continue_training = False
+    continue_training = True
+    # continue_training = False
 
     num_phenos = 2
     net = get_transformer(geno.tok_mat.shape[1], num_phenos, max_seq_pos, geno.num_toks, batch_size, device, output)
     net = nn.DataParallel(net, use_device_ids)
     if (continue_training):
-        prev_epoch = 300
-        prev_batch_size = 90
-        prev_net_name = "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_test_split-{}_net.pickle".format(
-            plink_base, str(enc_ver), prev_batch_size, prev_epoch, geno.tok_mat.shape[1], geno.tok_mat.shape[0], prev_epoch, test_split
+        prev_epoch = 200
+        prev_batch_size = 60
+        prev_net_name = "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_test_split-{}_output-{}_net.pickle".format(
+            plink_base, str(enc_ver), prev_batch_size, prev_epoch, geno.tok_mat.shape[1], geno.tok_mat.shape[0], prev_epoch, test_split, output
     )
         net.load_state_dict(torch.load(prev_net_name))
         new_epoch = prev_epoch + num_epochs
-        new_net_name = "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_net.pickle".format(
-            plink_base, str(enc_ver), batch_size, num_epochs, geno.tok_mat.shape[1], geno.tok_mat.shape[0], new_epoch
+        new_net_name = "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_output-{}_net.pickle".format(
+            plink_base, str(enc_ver), batch_size, num_epochs, geno.tok_mat.shape[1], geno.tok_mat.shape[0], new_epoch, output
         )
     else:
         prev_epoch = 0
