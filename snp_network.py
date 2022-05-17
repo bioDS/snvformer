@@ -129,7 +129,8 @@ def get_train_test(input_phenos, geno, pheno, test_split):
 
 
 def train_net(
-    net, training_dataset, test_dataset, batch_size, num_epochs, device, learning_rate, prev_num_epochs, test_split
+    net, training_dataset, test_dataset, batch_size, num_epochs,
+    device, learning_rate, prev_num_epochs, test_split, train_log_file
 ):
     print("beginning training")
     training_iter = data.DataLoader(training_dataset, batch_size, shuffle=True)
@@ -158,11 +159,6 @@ def train_net(
             sum_loss += l.mean()
         # if e % 1 == 0:
         if e % (num_epochs / 10) == 0:
-            print(
-                "epoch {}, mean loss {:.3}, ".format(
-                    e, sum_loss / len(training_iter)),
-                end="",
-            )
             test_loss = 0.0
             with torch.no_grad():
                 for phenos, pos, X, y in test_iter:
@@ -173,7 +169,10 @@ def train_net(
                     Yh = net(phenos, X, pos)  # two-value softmax (binary classification)
                     l = loss(Yh, y)
                     test_loss += l.mean()
-            print("{:.3} (test)".format(test_loss / len(test_iter)))
+            tmpstr = "epoch {}, mean loss {:.3}, {:.3} (test)".format(
+                    e, sum_loss / len(training_iter), test_loss / len(test_iter))
+            print(tmpstr)
+            train_log_file.write(tmpstr)
             print("random few train cases:")
             for phenos, pos, tX, tY in data.Subset(training_dataset, np.random.choice(len(training_dataset), size=5, replace=False)):
                 tX = tX.to(device).unsqueeze(0)
@@ -449,10 +448,14 @@ def main():
             pickle.dump(train, f, pickle.HIGHEST_PROTOCOL)
     net = net.to(use_device_ids[0])
 
+    train_log_file = open(new_net_name + "_log.txt", "w")
+
     print("train dataset: ", check_pos_neg_frac(train))
     print("test dataset: ", check_pos_neg_frac(test))
 
-    train_net(net, train, test, batch_size, num_epochs, device, lr, prev_epoch, test_split)
+    train_net(net, train, test, batch_size, num_epochs, device, lr, prev_epoch, test_split, train_log_file)
+
+    train_log_file.close()
     # net = get_mlp(geno.tok_mat.shape[1], geno.num_toks, max_seq_pos, device)
 
     torch.save(net.state_dict(), new_net_name)
