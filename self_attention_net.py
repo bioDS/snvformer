@@ -35,8 +35,31 @@ class One_Hot_Embedding:
         # return torch.nn.functional.one_hot(new_t)
         return torch.nn.functional.one_hot(t.long(), num_classes=self.num_classes)
 
-class TransformerModel(nn.Module):
-    def __init__(self, seq_len, num_phenos, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, output_type, use_linformer=False, linformer_k=16) -> None:
+class FlattenedOutput(nn.Module):
+    def __init__(self, embed_dim, seq_len, num_phenos) -> None:
+        super().__init__()
+        dense = nn.Linear(embed_dim*(seq_len+num_phenos), 2)
+        self.softmax = nn.Softmax(1)
+        self.final_layer = nn.Sequential(dense, self.softmax)
+
+    def forward(self, enc_out):
+        enc_out = enc_out.view(enc_out.shape[0], -1)
+        return self.final_layer(enc_out)
+
+class TokenOutput(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        # dense = nn.Linear(embed_dim, 2)
+        self.softmax = nn.Softmax(1)
+        # self.final_layer = nn.Sequential(dense, self.softmax)
+
+    def forward(self, enc_out):
+        cls_tok = enc_out[:,0,:]
+        return self.softmax(cls_tok)
+
+# pre-trainable model
+class Encoder(nn.Module):
+    def __init__(self, seq_len, num_phenos, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, use_linformer=False, linformer_k=16) -> None:
         super().__init__()
         self.device = device
         # self.embedding = nn.Embedding(vocab_size, embedding_dim=embed_dim)
@@ -52,24 +75,6 @@ class TransformerModel(nn.Module):
             new_block = TransformerBlock(seq_len+num_phenos, embed_dim, num_heads, vocab_size, batch_size, device, use_linformer, linformer_k)
             self.blocks.append(new_block)
         self.blocks = nn.ModuleList(self.blocks)
-        self.output_type = output_type
-        self.true = tensor([0.0,1.0])
-        if output_type == 'tok':
-            dense = nn.Linear(embed_dim, 2)
-            self.softmax = nn.Softmax(1)
-            self.final_layer = nn.Sequential(dense, self.softmax)
-        elif output_type == 'binary':
-            dense = nn.Linear(embed_dim*(seq_len+num_phenos), 2)
-            self.softmax = nn.Softmax(1)
-            self.final_layer = nn.Sequential(dense, self.softmax)
-            # pass
-        elif output_type == "continuous":
-            # dense1 = nn.Linear(num_hiddens, 1, device=device)
-            # dense2 = nn.Linear(seq_len, 1, device=device)
-            # self.final_layer = nn.Sequential(dense1, dense2)
-            self.final_layer = nn.Linear((seq_len+num_phenos)*embed_dim, 1)
-        else:
-            raise ValueError("output_type must be 'binary', 'tok', or 'continuous'")
 
     def forward(self, phenos, x, pos):
         # ex = self.embedding(x.t()).swapaxes(0,1)
@@ -82,14 +87,23 @@ class TransformerModel(nn.Module):
         at = torch.cat([phenos, at], dim=1)
         for block in self.blocks:
             at = block(at)
-        if self.output_type == "tok":
-            # cls_tok = at[:,0,0]
-            cls_tok = at[:,0,:]
-            # return cls_tok # allows classifications > 1 (and we tend to only get these)
-            return self.softmax(cls_tok)
-            # cls_tok = torch.mean(at[:,0,:], dim=1)
-            # return self.final_layer(cls_tok)
-            # return torch.outer(cls_tok, self.true)
+        return at
+
+# Fine-tunable full model
+class TransformerModel(nn.Module):
+    def __init__(self, seq_len, num_phenos, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, output_type, use_linformer=False, linformer_k=16) -> None:
+        super().__init__()
+        self.encoder = Encoder(seq_len, num_phenos, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, use_linformer, linformer_k)
+
+        # self.output_type = output_type
+        # self.true = tensor([0.0,1.0])
+        if output_type == 'tok':
+            self.output = TokenOutput()
+        elif output_type == 'binary':
+            self.output = FlattenedOutput(embed_dim, seq_len, num_phenos)
         else:
-            at = at.view(ex.shape[0], -1)
-            return self.final_layer(at)
+            raise ValueError("output_type must be 'binary', or 'tok'")
+
+    def forward(self, phenos, x, pos):
+        enc_out = self.encoder(phenos, x, pos)
+        return self.output(enc_out)

@@ -34,7 +34,8 @@ batch_size = 10
 # net_file = "use_net.pickle"
 # net_file = "66k_gwas_encv-2_batch-20_epochs-100_p-65803_n-18776_epoch-100_test_split-0.05_net.pickle"
 # net_file = "66k_gwas_encv-2_batch-90_epochs-150_p-65803_n-18776_epoch-300_net.pickle"
-net_file = "net_epochs/66k_gwas_batch-60_epoch-240_test_split-0.3_net.pickle"
+# net_file = "net_epochs/66k_gwas_batch-60_epoch-240_test_split-0.3_net.pickle"
+net_file = "./66k_gwas_encv-2_batch-60_epochs-200_p-65803_n-18776_epoch-400_output-binary_net.pickle"
 # net_file = "66k_gwas_batch-90_epoch-210_net.pickle"
 # net_file = "66k_gwas_batch-90_epoch-210_net.pickle"
 with open(net_file + "_test.pickle", "rb") as f:
@@ -49,7 +50,7 @@ with open("66k_gwas_encv-2_geno_cache.pickle", "rb") as f:
 # net_file = "ai-True_batch-180_epochs-150_p-65803_n-18776_net.pickle"
 # net_file = "new_enc_50_epochs_0596_test_network.pickle"
 
-num_phenos = 2
+num_phenos = 3
 max_seq_pos = geno.positions.max()
 use_device_ids = [5]
 device = torch.device('cuda:{}'.format(use_device_ids[0]))

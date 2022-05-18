@@ -60,7 +60,7 @@ def read_from_plink(remove_nan=False, small_set=False, subsample_control=True, e
         geno = geno[geno["sample"].isin(sample_ids)]
 
     urate = phenos["urate"]
-    train_phenos = phenos[["age", "sex"]]
+    train_phenos = phenos[["age", "sex", "bmi"]]
 
     geno_mat = geno.values
     positions = np.asarray(geno.pos)

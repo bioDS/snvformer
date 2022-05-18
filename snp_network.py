@@ -96,7 +96,7 @@ def get_train_test(input_phenos, geno, pheno, test_split):
     train_all_pos = np.concatenate([train_control_pos, train_gout_pos])
     test_all_pos = np.concatenate([test_control_pos, test_gout_pos])
 
-    positions = tensor(geno.positions)
+    positions = geno.positions
     test_seqs = geno.tok_mat[test_all_pos,]
     test_phes = gout[test_all_pos]
     train_seqs = geno.tok_mat[train_all_pos]
@@ -105,12 +105,14 @@ def get_train_test(input_phenos, geno, pheno, test_split):
     print("phes shape: ", train_phes.shape)
 
     age = input_phenos["age"]
+    bmi = input_phenos["bmi"]
     # 0 == Male, 1 == Female
     sex = torch.tensor(input_phenos["sex"].values == "Female", dtype=torch.int64)
-    input_pheno_vec = torch.tensor([
-        age.values,
-        sex,
-    ], dtype=torch.int64).t()
+    input_pheno_vec = torch.tensor(np.array([
+        np.array(age.values),
+        np.array(sex),
+        np.array(bmi),
+    ], dtype=np.int64), dtype=torch.int64).t()
     train_pheno_vec = input_pheno_vec[train_all_pos,]
     test_pheno_vec = input_pheno_vec[test_all_pos,]
     # training_dataset = data.TensorDataset(
@@ -120,10 +122,10 @@ def get_train_test(input_phenos, geno, pheno, test_split):
     #     tensor(test_seqs, device=device), tensor(test_phes, dtype=torch.int64)
     # )
     training_dataset = data.TensorDataset(
-        train_pheno_vec, positions.repeat(len(train_seqs), 1), tensor(train_seqs), tensor(train_phes, dtype=torch.int64)
+        train_pheno_vec, positions.repeat(len(train_seqs), 1), train_seqs, tensor(train_phes, dtype=torch.int64)
     )
     test_dataset = data.TensorDataset(
-        test_pheno_vec, positions.repeat(len(test_seqs), 1), tensor(test_seqs), tensor(test_phes, dtype=torch.int64)
+        test_pheno_vec, positions.repeat(len(test_seqs), 1), test_seqs, tensor(test_phes, dtype=torch.int64)
     )
     return training_dataset, test_dataset
 
@@ -409,35 +411,36 @@ def main():
     # test_split = 0.05 #TODO: just for testing
     train, test, geno, pheno, enc_ver = get_data(2, test_split)
 
-    batch_size = 60
-    num_epochs = 200
+    batch_size = 240
+    num_epochs = 50
     lr = 1e-7
     # output = "tok"
     output = "binary"
+    net_dir = "saved_nets/"
 
     new_epoch = num_epochs
-    new_net_name = "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_test_split-{}_output-{}_net.pickle".format(
+    new_net_name = net_dir + "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_test_split-{}_output-{}_net.pickle".format(
         plink_base, str(enc_ver), batch_size, num_epochs,
         geno.tok_mat.shape[1], geno.tok_mat.shape[0], new_epoch,
         test_split, output
     )
 
     max_seq_pos = geno.positions.max()
-    continue_training = True
-    # continue_training = False
+    # continue_training = True
+    continue_training = False
 
-    num_phenos = 2
+    num_phenos = 3
     net = get_transformer(geno.tok_mat.shape[1], num_phenos, max_seq_pos, geno.num_toks, batch_size, device, output)
     net = nn.DataParallel(net, use_device_ids)
     if (continue_training):
         prev_epoch = 200
         prev_batch_size = 60
-        prev_net_name = "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_test_split-{}_output-{}_net.pickle".format(
+        prev_net_name = net_dir + "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_test_split-{}_output-{}_net.pickle".format(
             plink_base, str(enc_ver), prev_batch_size, prev_epoch, geno.tok_mat.shape[1], geno.tok_mat.shape[0], prev_epoch, test_split, output
     )
         net.load_state_dict(torch.load(prev_net_name))
         new_epoch = prev_epoch + num_epochs
-        new_net_name = "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_output-{}_net.pickle".format(
+        new_net_name = net_dir + "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_output-{}_net.pickle".format(
             plink_base, str(enc_ver), batch_size, num_epochs, geno.tok_mat.shape[1], geno.tok_mat.shape[0], new_epoch, output
         )
     else:
