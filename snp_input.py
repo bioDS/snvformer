@@ -96,9 +96,9 @@ def read_from_plink(remove_nan=False, small_set=False, subsample_control=True, e
 
 def get_pretrain_dataset(encoding: int = 2):
     print("using data from:", data_dir)
-    bed_file = gwas_dir+plink_base+".bed"
-    bim_file = gwas_dir+plink_base+".bim"
-    fam_file = gwas_dir+plink_base+".fam"
+    bed_file = gwas_dir+pretrain_plink_base+".bed"
+    bim_file = gwas_dir+pretrain_plink_base+".bim"
+    fam_file = gwas_dir+pretrain_plink_base+".fam"
     print("bed_file:", bed_file)
     geno_tmp = read_plink1_bin(bed_file, bim_file, fam_file)
     geno_tmp["sample"] = pandas.to_numeric(geno_tmp["sample"])

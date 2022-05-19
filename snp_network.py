@@ -55,7 +55,7 @@ def get_mlp(in_size, vocab_size, max_seq_pos, device):
     net = simple_mlp(in_size, num_hiddens, depth, vocab_size, embed_dim, max_seq_pos, device)
     return net
 
-def get_encoder(seq_len, num_phenos, max_seq_pos, vocab_size, batch_size, device):
+def get_encoder(seq_len, num_phenos, max_seq_pos, vocab_size, batch_size, device, cls_tok):
     encoder = Encoder(
         seq_len,
         num_phenos,
@@ -66,6 +66,7 @@ def get_encoder(seq_len, num_phenos, max_seq_pos, vocab_size, batch_size, device
         vocab_size=vocab_size,
         batch_size=batch_size,
         device=device,
+        cls_tok=cls_tok,
         use_linformer=True,
         linformer_k=64,
     )
@@ -197,6 +198,7 @@ def pretrain_encoder(
     loss = nn.CrossEntropyLoss()
 
     class_size = encoder.module.embed_dim - encoder.module.pos_size
+    rng = np.random.default_rng()
 
     # loop training set
     for e in range(num_epochs):
@@ -205,6 +207,12 @@ def pretrain_encoder(
         for pos, seqs in training_iter:
             #TODO: actually use phenotypes?
             phenos = torch.zeros(seqs.shape[0], encoder.module.num_phenos)
+            # take a subset of SNVs the size of the encoder input
+            input_size = encoder.module.seq_len
+            chosen_positions = rng.choice(seqs.shape[1], input_size, replace=False)
+            seqs = seqs[:,chosen_positions]
+            pos = pos[:,chosen_positions]
+            seqs, pos = prepend_cls_tok(seqs, pos, pretrain_snv_toks.string_to_tok["cls"])
             # randomly mask SNVs (but not their positions)
             masked_seqs = mask_sequence(seqs, 0.15, pretrain_snv_toks)
 
@@ -464,8 +472,11 @@ def check_pos_neg_frac(dataset: data.TensorDataset):
     return pos, neg, unknown
 
 
-def prepend_cls_tok(seqs, cls_tok):
-    return np.insert(seqs, 0, cls_tok, axis=1)
+# adds the token for 'cls' to the beginning of the sequence, with position '-1'
+def prepend_cls_tok(seqs, pos, cls_tok):
+    # return np.insert(seqs, 0, cls_tok, axis=1)
+    pass
+
 
 def translate_unknown(seqs, tok):
     np.place(seqs, seqs == -9, tok)
@@ -558,7 +569,8 @@ def main():
     num_phenos = 3
     # net = get_transformer(geno.tok_mat.shape[1], num_phenos, max_seq_pos, geno.num_toks, batch_size, device, output)
     encoder_file = "pretrained_encoder.net"
-    encoder = get_encoder(geno.tok_mat.shape[1], num_phenos, max_seq_pos, pretrain_snv_toks.num_toks, batch_size, device)
+    print("creating encoder w/ input size: {}".format(geno.tok_mat.shape[1]))
+    encoder = get_encoder(geno.tok_mat.shape[1], num_phenos, max_seq_pos, pretrain_snv_toks.num_toks, batch_size, device, pretrain_snv_toks.string_to_tok['cls'])
     encoder = encoder.cuda(device)
     encoder = nn.DataParallel(encoder, use_device_ids)
     torch.save(encoder.state_dict(), encoder_file)
@@ -568,7 +580,8 @@ def main():
     pt_lr = 1e-7
     pt_net_name = "bs-{}_epochs-{}_lr-{}_pretrained.net".format(pt_batch_size, pt_epochs, pt_lr)
     pt_log_file = open(pt_net_name + ".log", "w")
-    prepend_cls_tok(pretrain_snv_toks.tok_mat, pretrain_snv_toks.string_to_tok['cls'])
+    print("pre-training encoder with sequences of length {}".format(pretrain_snv_toks.tok_mat.shape[1]))
+    # prepend_cls_tok(pretrain_snv_toks.tok_mat, pretrain_snv_toks.string_to_tok['cls'])
     pretrain_encoder(encoder, pretrain_snv_toks, pt_batch_size, pt_epochs, device, pt_lr, pt_log_file)
     pt_log_file.close()
 
@@ -600,8 +613,8 @@ def main():
 
     print("train dataset: ", check_pos_neg_frac(train))
     print("test dataset: ", check_pos_neg_frac(test))
-    prepend_cls_tok(train, geno.string_to_tok['cls'])
-    prepend_cls_tok(test, geno.string_to_tok['cls'])
+    # prepend_cls_tok(train, geno.string_to_tok['cls'])
+    # prepend_cls_tok(test, geno.string_to_tok['cls'])
     train_net(net, train, test, batch_size, num_epochs, device, lr, prev_epoch, test_split, train_log_file)
 
     train_log_file.close()

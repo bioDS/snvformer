@@ -59,9 +59,11 @@ class TokenOutput(nn.Module):
 
 # pre-trainable model
 class Encoder(nn.Module):
-    def __init__(self, seq_len, num_phenos, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, use_linformer=False, linformer_k=16) -> None:
+    def __init__(self, seq_len, num_phenos, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, cls_tok, use_linformer=False, linformer_k=16) -> None:
         super().__init__()
         print("encoder vocab size: {}".format(vocab_size))
+        self.cls_tok = cls_tok
+        self.seq_len = seq_len
         self.num_phenos = num_phenos
         self.device = device
         # self.embedding = nn.Embedding(vocab_size, embedding_dim=embed_dim)
@@ -82,11 +84,13 @@ class Encoder(nn.Module):
 
     def forward(self, phenos, x, pos):
         # ex = self.embedding(x.t()).swapaxes(0,1)
+        # prepend 'cls' token to sequence
         ex = self.embedding(x)
         ep = self.pos_encoding(torch.zeros([x.shape[0], x.shape[1], self.pos_size], device=x.device), pos)
         phenos = torch.unsqueeze(phenos, 2).expand(-1,-1, self.pos_size + ex.shape[2])
         at = torch.cat([ex, ep], dim=2)
-        at = torch.cat([phenos, at], dim=1)
+        batch_cls = torch.repeat(x.shape[0], self.cls_tok, dim=0)
+        at = torch.cat([batch_cls, phenos, at], dim=1)
         for block in self.blocks:
             at = block(at)
         return at
@@ -107,8 +111,8 @@ class TransformerModel(nn.Module):
             raise ValueError("output_type must be 'binary', or 'tok'")
 
         @classmethod
-        def with_new_encoder(cls, seq_len, num_phenos, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, output_type, use_linformer=False, linformer_k=16):
-            encoder = Encoder(seq_len, num_phenos, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, use_linformer, linformer_k)
+        def with_new_encoder(cls, seq_len, num_phenos, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, output_type, cls_tok, use_linformer=False, linformer_k=16):
+            encoder = Encoder(seq_len, num_phenos, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, cls_tok, use_linformer, linformer_k)
             return cls(encoder, seq_len, num_phenos, output_type)
 
     def forward(self, phenos, x, pos):
