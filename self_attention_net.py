@@ -47,26 +47,30 @@ class FlattenedOutput(nn.Module):
         return self.final_layer(enc_out)
 
 class TokenOutput(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, embed_dim) -> None:
         super().__init__()
-        # dense = nn.Linear(embed_dim, 2)
+        dense = nn.Linear(embed_dim, 2)
         self.softmax = nn.Softmax(1)
-        # self.final_layer = nn.Sequential(dense, self.softmax)
+        self.final_layer = nn.Sequential(dense, self.softmax)
 
     def forward(self, enc_out):
         cls_tok = enc_out[:,0,:]
-        return self.softmax(cls_tok)
+        return self.final_layer(cls_tok)
 
 # pre-trainable model
 class Encoder(nn.Module):
     def __init__(self, seq_len, num_phenos, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, use_linformer=False, linformer_k=16) -> None:
         super().__init__()
+        print("encoder vocab size: {}".format(vocab_size))
+        self.num_phenos = num_phenos
         self.device = device
         # self.embedding = nn.Embedding(vocab_size, embedding_dim=embed_dim)
         self.pos_size = embed_dim - vocab_size
+        self.embed_dim = embed_dim
         if self.pos_size % 2 == 1:
             self.pos_size = self.pos_size - 1
         one_hot_embed_size = embed_dim - self.pos_size
+        print("encoder 1-hot embedding size: {}".format(one_hot_embed_size))
         embedding = One_Hot_Embedding(one_hot_embed_size)
         self.embedding = embedding.embed
         self.pos_encoding = ExplicitPositionalEncoding(self.pos_size, max_len=max_seq_pos+1)
@@ -79,8 +83,6 @@ class Encoder(nn.Module):
     def forward(self, phenos, x, pos):
         # ex = self.embedding(x.t()).swapaxes(0,1)
         ex = self.embedding(x)
-        if (ex.shape[2] != 32):
-            print("ex.shape[2]: {}".format(ex.shape[2]))
         ep = self.pos_encoding(torch.zeros([x.shape[0], x.shape[1], self.pos_size], device=x.device), pos)
         phenos = torch.unsqueeze(phenos, 2).expand(-1,-1, self.pos_size + ex.shape[2])
         at = torch.cat([ex, ep], dim=2)
@@ -91,18 +93,23 @@ class Encoder(nn.Module):
 
 # Fine-tunable full model
 class TransformerModel(nn.Module):
-    def __init__(self, seq_len, num_phenos, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, output_type, use_linformer=False, linformer_k=16) -> None:
+    def __init__(self, encoder, seq_len, num_phenos, output_type) -> None:
         super().__init__()
-        self.encoder = Encoder(seq_len, num_phenos, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, use_linformer, linformer_k)
+        # self.encoder = Encoder(seq_len, num_phenos, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, use_linformer, linformer_k)
+        self.encoder = encoder
+        embed_dim = encoder.embed_dim
 
-        # self.output_type = output_type
-        # self.true = tensor([0.0,1.0])
         if output_type == 'tok':
-            self.output = TokenOutput()
+            self.output = TokenOutput(embed_dim)
         elif output_type == 'binary':
             self.output = FlattenedOutput(embed_dim, seq_len, num_phenos)
         else:
             raise ValueError("output_type must be 'binary', or 'tok'")
+
+        @classmethod
+        def with_new_encoder(cls, seq_len, num_phenos, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, output_type, use_linformer=False, linformer_k=16):
+            encoder = Encoder(seq_len, num_phenos, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, use_linformer, linformer_k)
+            return cls(encoder, seq_len, num_phenos, output_type)
 
     def forward(self, phenos, x, pos):
         enc_out = self.encoder(phenos, x, pos)

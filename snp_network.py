@@ -55,9 +55,33 @@ def get_mlp(in_size, vocab_size, max_seq_pos, device):
     net = simple_mlp(in_size, num_hiddens, depth, vocab_size, embed_dim, max_seq_pos, device)
     return net
 
+def get_encoder(seq_len, num_phenos, max_seq_pos, vocab_size, batch_size, device):
+    encoder = Encoder(
+        seq_len,
+        num_phenos,
+        max_seq_pos,
+        embed_dim=64,
+        num_heads=4,
+        num_layers=4,
+        vocab_size=vocab_size,
+        batch_size=batch_size,
+        device=device,
+        use_linformer=True,
+        linformer_k=64,
+    )
+    return encoder
+
+def transformer_from_encoder(encoder, seq_len, num_phenos, output_type):
+    net = TransformerModel(
+        encoder,
+        seq_len,
+        num_phenos,
+        output_type
+    )
+    return net
 
 def get_transformer(seq_len, num_phenos, max_seq_pos, vocab_size, batch_size, device, output):
-    net = TransformerModel(
+    net = TransformerModel.with_new_encoder(
         seq_len,
         num_phenos,
         max_seq_pos,
@@ -129,6 +153,88 @@ def get_train_test(input_phenos, geno, pheno, test_split):
     )
     return training_dataset, test_dataset
 
+def mask_sequence(seqs, frac, tokenised_snvs: Tokenised_SNVs):
+    rng = np.random.default_rng()
+    mask_tok = tokenised_snvs.string_to_tok["mask"]
+    # ratios are from BERT
+    frac_masked = 0.8
+    frac_random = 0.1
+    # frac_unchanged = 0.1
+    mask_positions = []
+    random_positions = []
+
+    # a[[0,1],[1,1]] = [7,8]
+    # do each batch separately
+    for seq in range(seqs.shape[0]):
+        seq_change_positions = rng.choice(seqs.shape[1], size=(int)(math.ceil(frac*seqs.shape[1])), replace=False)
+        seq_mask_positions = [(seq,i) for i in rng.choice(seq_change_positions, (int)(math.ceil(frac_masked*len(seq_change_positions))), replace=False)]
+        seq_random_positions = [(seq,i) for i in rng.choice(seq_change_positions, (int)(math.ceil(frac_random*len(seq_change_positions))), replace=False)]
+        mask_positions.extend(seq_mask_positions)
+        random_positions.extend(seq_random_positions)
+    # replace mask tokens
+    mask_positions = np.transpose(np.array(mask_positions))
+    random_positions = np.transpose(np.array(random_positions))
+    seqs[mask_positions] = mask_tok
+    # replace random tokens
+    new_random_toks = torch.tensor(rng.choice([i for i in tokenised_snvs.tok_to_string.keys()], random_positions.shape[1], replace=True), dtype=torch.int32)
+    seqs[random_positions] = new_random_toks
+    return seqs
+
+def pretrain_encoder(
+    encoder: nn.DataParallel(Encoder), pretrain_snv_toks, batch_size, num_epochs,
+    device, learning_rate, pretrain_log_file):
+
+    print("beginning pre-training encoder")
+    positions = pretrain_snv_toks.positions
+    pos_seq_dataset = data.TensorDataset(positions.repeat(pretrain_snv_toks.tok_mat.shape[0], 1), pretrain_snv_toks.tok_mat)
+    training_iter = data.DataLoader(pos_seq_dataset, batch_size, shuffle=True)
+    for param in encoder.parameters():
+        if param.device.type == 'cpu':
+            print(param.device)
+            print(param.shape)
+            break
+    trainer = torch.optim.AdamW(encoder.parameters(), lr=learning_rate, amsgrad=True)
+    loss = nn.CrossEntropyLoss()
+
+    class_size = encoder.module.embed_dim - encoder.module.pos_size
+
+    # loop training set
+    for e in range(num_epochs):
+        sum_loss = 0.0
+        num_steps = 0
+        for pos, seqs in training_iter:
+            #TODO: actually use phenotypes?
+            phenos = torch.zeros(seqs.shape[0], encoder.module.num_phenos)
+            # randomly mask SNVs (but not their positions)
+            masked_seqs = mask_sequence(seqs, 0.15, pretrain_snv_toks)
+
+            # get encoded sequence
+            phenos = phenos.to(device)
+            masked_seqs = masked_seqs.to(device)
+            pos = pos.to(device)
+            pred_seqs = encoder(phenos, masked_seqs, pos)
+
+            # remove positions
+            # ignore first item in sequence, it's the [cls] token
+            pred_class_probs = torch.softmax(pred_seqs[:,1+encoder.module.num_phenos:,0:class_size], dim=2)
+            # pred_classes = torch.argmax(pred_classes_probs, dim=2)
+            true_classes = torch.nn.functional.one_hot(seqs.long()[:,1:], num_classes=pred_class_probs.shape[2])
+
+            # penalise mis-prediced values
+            l = loss(pred_class_probs, true_classes.float().to(device))
+            #TODO: also positions? We give these, so it's a bit unnecessary.
+
+            trainer.zero_grad()
+            l.mean().backward()
+            trainer.step()
+            sum_loss += l.mean()
+            num_steps = num_steps + 1
+            if (num_steps > 10):
+                break
+
+        s = "epoch {}, loss {}".format(e, sum_loss/num_steps)
+        print(s)
+        pretrain_log_file.write(s)
 
 def train_net(
     net, training_dataset, test_dataset, batch_size, num_epochs,
@@ -414,8 +520,8 @@ def main():
     batch_size = 240
     num_epochs = 50
     lr = 1e-7
-    # output = "tok"
-    output = "binary"
+    output = "tok"
+    # output = "binary"
     net_dir = "saved_nets/"
 
     new_epoch = num_epochs
@@ -425,12 +531,51 @@ def main():
         test_split, output
     )
 
-    max_seq_pos = geno.positions.max()
+    # Pre-training
+    pt_pickle = cache_dir + "66k_pretrain.pickle"
+    if exists(pt_pickle):
+        with open(pt_pickle, "rb") as f:
+            pretrain_snv_toks = pickle.load(f)
+    else:
+        pretrain_snv_toks = get_pretrain_dataset(enc_ver)
+        with open(pt_pickle, "wb") as f:
+            pickle.dump(pretrain_snv_toks, f)
+
+    # max_seq_pos = geno.positions.max()
+    max_seq_pos = pretrain_snv_toks.positions.max()
+    #TODO: pretrain num_toks doesn't seem to be the same as geno num_toks.
+    print("geno num toks: {}".format(geno.num_toks))
+    print("pretrain_snv_toks num toks: {}".format(pretrain_snv_toks.num_toks))
+    geno_toks = set([*geno.tok_to_string.keys()])
+    pt_toks = set([*pretrain_snv_toks.tok_to_string.keys()])
+    ft_new_toks = geno_toks - geno_toks.intersection(pt_toks)
+    if (len(ft_new_toks) > 0):
+        print("Warning, fine tuning set contains new tokens!")
+        print(geno.tok_to_string[ft_new_toks])
     # continue_training = True
     continue_training = False
 
     num_phenos = 3
-    net = get_transformer(geno.tok_mat.shape[1], num_phenos, max_seq_pos, geno.num_toks, batch_size, device, output)
+    # net = get_transformer(geno.tok_mat.shape[1], num_phenos, max_seq_pos, geno.num_toks, batch_size, device, output)
+    encoder_file = "pretrained_encoder.net"
+    encoder = get_encoder(geno.tok_mat.shape[1], num_phenos, max_seq_pos, pretrain_snv_toks.num_toks, batch_size, device)
+    encoder = encoder.cuda(device)
+    encoder = nn.DataParallel(encoder, use_device_ids)
+    torch.save(encoder.state_dict(), encoder_file)
+
+    pt_batch_size = 240
+    pt_epochs = 2
+    pt_lr = 1e-7
+    pt_net_name = "bs-{}_epochs-{}_lr-{}_pretrained.net".format(pt_batch_size, pt_epochs, pt_lr)
+    pt_log_file = open(pt_net_name + ".log", "w")
+    prepend_cls_tok(pretrain_snv_toks.tok_mat, pretrain_snv_toks.string_to_tok['cls'])
+    pretrain_encoder(encoder, pretrain_snv_toks, pt_batch_size, pt_epochs, device, pt_lr, pt_log_file)
+    pt_log_file.close()
+
+
+    # Fine-tuning
+    net = transformer_from_encoder(encoder.module, geno.tok_mat.shape[1], num_phenos, output)
+
     net = nn.DataParallel(net, use_device_ids)
     if (continue_training):
         prev_epoch = 200
@@ -455,7 +600,8 @@ def main():
 
     print("train dataset: ", check_pos_neg_frac(train))
     print("test dataset: ", check_pos_neg_frac(test))
-
+    prepend_cls_tok(train, geno.string_to_tok['cls'])
+    prepend_cls_tok(test, geno.string_to_tok['cls'])
     train_net(net, train, test, batch_size, num_epochs, device, lr, prev_epoch, test_split, train_log_file)
 
     train_log_file.close()

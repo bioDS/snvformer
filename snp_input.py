@@ -11,6 +11,7 @@ data_dir = os.environ['UKBB_DATA'] + "/"
 # gwas_dir = os.environ['UKBB_DATA'] + "/gwas_associated_only/"
 gwas_dir = os.environ['UKBB_DATA'] + "/"
 plink_base = os.environ['PLINK_FILE']
+pretrain_plink_base = os.environ['PRETRAIN_PLINK_FILE']
 urate_file = os.environ['URATE_FILE']
 
 class Tokenised_SNVs:
@@ -92,6 +93,26 @@ def read_from_plink(remove_nan=False, small_set=False, subsample_control=True, e
     snv_toks = Tokenised_SNVs(geno, encoding)
 
     return train_phenos, snv_toks, phenos
+
+def get_pretrain_dataset(encoding: int = 2):
+    print("using data from:", data_dir)
+    bed_file = gwas_dir+plink_base+".bed"
+    bim_file = gwas_dir+plink_base+".bim"
+    fam_file = gwas_dir+plink_base+".fam"
+    print("bed_file:", bed_file)
+    geno_tmp = read_plink1_bin(bed_file, bim_file, fam_file)
+    geno_tmp["sample"] = pandas.to_numeric(geno_tmp["sample"])
+    urate_tmp = pandas.read_csv(data_dir + urate_file)
+    withdrawn_ids = pandas.read_csv(data_dir + "w12611_20220222.csv", header=None, names=["ids"])
+
+    usable_ids = list(set(urate_tmp.eid) - set(withdrawn_ids.ids))
+    del urate_tmp
+    geno = geno_tmp[geno_tmp["sample"].isin(usable_ids)]
+    del geno_tmp
+
+    snv_toks = Tokenised_SNVs(geno, encoding)
+
+    return snv_toks
 
 if __name__ == "__main__":
     snv_toks, urate = read_from_plink(encoding=2)
