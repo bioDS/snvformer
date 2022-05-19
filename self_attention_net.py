@@ -43,8 +43,10 @@ class FlattenedOutput(nn.Module):
         self.final_layer = nn.Sequential(dense, self.softmax)
 
     def forward(self, enc_out):
-        enc_out = enc_out.view(enc_out.shape[0], -1)
-        return self.final_layer(enc_out)
+        cls_tok, phenos, seq_out = enc_out
+        flat_out = torch.cat([cls_tok, phenos, seq_out], dim=1)
+        flat_out = flat_out.view(flat_out.shape[0], -1)
+        return self.final_layer(flat_out)
 
 class TokenOutput(nn.Module):
     def __init__(self, embed_dim) -> None:
@@ -54,7 +56,7 @@ class TokenOutput(nn.Module):
         self.final_layer = nn.Sequential(dense, self.softmax)
 
     def forward(self, enc_out):
-        cls_tok = enc_out[:,0,:]
+        cls_tok, phenos, seq_out = enc_out
         return self.final_layer(cls_tok)
 
 # pre-trainable model
@@ -78,7 +80,7 @@ class Encoder(nn.Module):
         self.pos_encoding = ExplicitPositionalEncoding(self.pos_size, max_len=max_seq_pos+1)
         self.blocks = []
         for _ in range(num_layers):
-            new_block = TransformerBlock(seq_len+num_phenos, embed_dim, num_heads, vocab_size, batch_size, device, use_linformer, linformer_k)
+            new_block = TransformerBlock(seq_len+num_phenos+1, embed_dim, num_heads, vocab_size, batch_size, device, use_linformer, linformer_k) # seq_len + 1 to include cls tok
             self.blocks.append(new_block)
         self.blocks = nn.ModuleList(self.blocks)
 
@@ -89,11 +91,14 @@ class Encoder(nn.Module):
         ep = self.pos_encoding(torch.zeros([x.shape[0], x.shape[1], self.pos_size], device=x.device), pos)
         phenos = torch.unsqueeze(phenos, 2).expand(-1,-1, self.pos_size + ex.shape[2])
         at = torch.cat([ex, ep], dim=2)
-        batch_cls = torch.repeat(x.shape[0], self.cls_tok, dim=0)
+        batch_cls = torch.nn.functional.one_hot(tensor(self.cls_tok), num_classes=self.embed_dim).repeat(x.shape[0], 1).unsqueeze(1).to(self.device)
         at = torch.cat([batch_cls, phenos, at], dim=1)
         for block in self.blocks:
             at = block(at)
-        return at
+        cls = at[:,0,:]
+        phen_out = at[:,1:(self.num_phenos+1),:]
+        seq_out = at[:,self.num_phenos+1,:]
+        return cls, phen_out, seq_out
 
 # Fine-tunable full model
 class TransformerModel(nn.Module):

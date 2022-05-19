@@ -212,19 +212,18 @@ def pretrain_encoder(
             chosen_positions = rng.choice(seqs.shape[1], input_size, replace=False)
             seqs = seqs[:,chosen_positions]
             pos = pos[:,chosen_positions]
-            seqs, pos = prepend_cls_tok(seqs, pos, pretrain_snv_toks.string_to_tok["cls"])
             # randomly mask SNVs (but not their positions)
-            masked_seqs = mask_sequence(seqs, 0.15, pretrain_snv_toks)
+            masked_seqs = mask_sequence(seqs, 0.40, pretrain_snv_toks)
 
             # get encoded sequence
             phenos = phenos.to(device)
             masked_seqs = masked_seqs.to(device)
             pos = pos.to(device)
-            pred_seqs = encoder(phenos, masked_seqs, pos)
+            _, _, pred_seqs = encoder(phenos, masked_seqs, pos)
 
             # remove positions
             # ignore first item in sequence, it's the [cls] token
-            pred_class_probs = torch.softmax(pred_seqs[:,1+encoder.module.num_phenos:,0:class_size], dim=2)
+            pred_class_probs = torch.softmax(pred_seqs[:,:,0:class_size], dim=2)
             # pred_classes = torch.argmax(pred_classes_probs, dim=2)
             true_classes = torch.nn.functional.one_hot(seqs.long()[:,1:], num_classes=pred_class_probs.shape[2])
 
