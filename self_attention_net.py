@@ -6,7 +6,8 @@ class TransformerBlock(nn.Module):
     def __init__(self, seq_len, embed_dim, num_heads, vocab_size, batch_size, device, use_linformer, linformer_k) -> None:
         super(TransformerBlock, self).__init__()
         if use_linformer:
-            self.attention = LinformerAttention(embed_dim, seq_len, linformer_k, num_heads, dropout=0.05, device=device)
+            # self.attention = LinformerAttention(embed_dim, seq_len, linformer_k, num_heads, dropout=0.05, device=device)
+            self.attention = LinformerAttention(embed_dim, seq_len, linformer_k, num_heads, dropout=0.05)
         else:
             self.attention = D2LMultiHeadAttention(embed_dim, num_heads, dropout=0.05, device=device)
         self.addnorm = AddNorm(embed_dim)
@@ -88,16 +89,17 @@ class Encoder(nn.Module):
         # ex = self.embedding(x.t()).swapaxes(0,1)
         # prepend 'cls' token to sequence
         ex = self.embedding(x)
+        # ep = self.pos_encoding(torch.zeros([x.shape[0], x.shape[1], self.pos_size], device=self.device), pos)
         ep = self.pos_encoding(torch.zeros([x.shape[0], x.shape[1], self.pos_size], device=x.device), pos)
-        phenos = torch.unsqueeze(phenos, 2).expand(-1,-1, self.pos_size + ex.shape[2])
+        phenos = torch.unsqueeze(phenos, 2).expand(-1,-1, self.pos_size + ex.shape[2]).to(x.device)
         at = torch.cat([ex, ep], dim=2)
-        batch_cls = torch.nn.functional.one_hot(tensor(self.cls_tok), num_classes=self.embed_dim).repeat(x.shape[0], 1).unsqueeze(1).to(self.device)
+        batch_cls = torch.nn.functional.one_hot(tensor(self.cls_tok), num_classes=self.embed_dim).repeat(x.shape[0], 1).unsqueeze(1).to(x.device)
         at = torch.cat([batch_cls, phenos, at], dim=1)
         for block in self.blocks:
             at = block(at)
         cls = at[:,0,:]
         phen_out = at[:,1:(self.num_phenos+1),:]
-        seq_out = at[:,self.num_phenos+1,:]
+        seq_out = at[:,self.num_phenos+1:,:]
         return cls, phen_out, seq_out
 
 # Fine-tunable full model

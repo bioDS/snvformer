@@ -224,11 +224,13 @@ def pretrain_encoder(
             # remove positions
             # ignore first item in sequence, it's the [cls] token
             pred_class_probs = torch.softmax(pred_seqs[:,:,0:class_size], dim=2)
+            pred_class_probs = torch.swapdims(pred_class_probs, 1, 2)
             # pred_classes = torch.argmax(pred_classes_probs, dim=2)
-            true_classes = torch.nn.functional.one_hot(seqs.long()[:,1:], num_classes=pred_class_probs.shape[2])
+            # true_classes = torch.nn.functional.one_hot(seqs.long()[:,1:], num_classes=pred_class_probs.shape[2])
+            true_classes = seqs.long().to(device)
 
             # penalise mis-prediced values
-            l = loss(pred_class_probs, true_classes.float().to(device))
+            l = loss(pred_class_probs, true_classes)
             #TODO: also positions? We give these, so it's a bit unnecessary.
 
             trainer.zero_grad()

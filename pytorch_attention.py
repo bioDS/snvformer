@@ -116,11 +116,9 @@ def transpose_output(X, num_heads):
 class LinformerAttention(nn.Module):
     """Multi-head attention."""
     def __init__(self, embed_dim, seq_len, linform_k,
-                 num_heads, dropout, device='cpu', bias=False, **kwargs):
+                 num_heads, dropout, bias=False, **kwargs):
         super().__init__(**kwargs)
-        self.device=device
         self.num_heads = num_heads
-        use_device_ids=[1,2,3,4]
         self.attention = D2LDotProductAttention(dropout)
 
         self.W_q = nn.Linear(embed_dim, embed_dim, bias=bias)
