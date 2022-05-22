@@ -238,8 +238,8 @@ def pretrain_encoder(
             trainer.step()
             sum_loss += l.mean()
             num_steps = num_steps + 1
-            if (num_steps > 10):
-                break
+            # if (num_steps > 10):
+            #     break
 
         s = "epoch {}, loss {}".format(e, sum_loss/num_steps)
         print(s)
@@ -577,7 +577,7 @@ def main():
     torch.save(encoder.state_dict(), encoder_file)
 
     pt_batch_size = 240
-    pt_epochs = 2
+    pt_epochs = 20
     pt_lr = 1e-7
     pt_net_name = "bs-{}_epochs-{}_lr-{}_pretrained.net".format(pt_batch_size, pt_epochs, pt_lr)
     pt_log_file = open(pt_net_name + ".log", "w")
