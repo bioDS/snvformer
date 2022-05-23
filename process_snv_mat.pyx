@@ -177,11 +177,11 @@ def get_tok_mat(geno, encoding: int = 2):
     cdef int p = p_tmp
     cdef int pos = 0
 
-    for special_tok in ['nan', 'ins', 'del']:
+    for special_tok in ['nan', 'ins', 'del', 'cls', 'mask']:
         string_to_tok[special_tok] = pos
         tok_to_string[pos] = special_tok
         pos = pos + 1
-    cdef int nan_tok = 0
+    cdef int nan_tok = string_to_tok['nan']
 
 
     cdef int tok
