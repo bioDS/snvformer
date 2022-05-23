@@ -117,11 +117,6 @@ class TransformerModel(nn.Module):
         else:
             raise ValueError("output_type must be 'binary', or 'tok'")
 
-        @classmethod
-        def with_new_encoder(cls, seq_len, num_phenos, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, output_type, cls_tok, use_linformer=False, linformer_k=16):
-            encoder = Encoder(seq_len, num_phenos, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, cls_tok, use_linformer, linformer_k)
-            return cls(encoder, seq_len, num_phenos, output_type)
-
     def forward(self, phenos, x, pos):
         enc_out = self.encoder(phenos, x, pos)
         return self.output(enc_out)

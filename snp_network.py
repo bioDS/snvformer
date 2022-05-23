@@ -60,15 +60,15 @@ def get_encoder(seq_len, num_phenos, max_seq_pos, vocab_size, batch_size, device
         seq_len,
         num_phenos,
         max_seq_pos,
-        embed_dim=64,
+        embed_dim=96,
         num_heads=4,
-        num_layers=4,
+        num_layers=6,
         vocab_size=vocab_size,
         batch_size=batch_size,
         device=device,
         cls_tok=cls_tok,
         use_linformer=True,
-        linformer_k=64,
+        linformer_k=96,
     )
     return encoder
 
@@ -81,20 +81,10 @@ def transformer_from_encoder(encoder, seq_len, num_phenos, output_type):
     )
     return net
 
-def get_transformer(seq_len, num_phenos, max_seq_pos, vocab_size, batch_size, device, output):
-    net = TransformerModel.with_new_encoder(
-        seq_len,
-        num_phenos,
-        max_seq_pos,
-        embed_dim=96,
-        num_heads=4,
-        num_layers=6,
-        vocab_size=vocab_size,
-        batch_size=batch_size,
-        device=device,
-        output_type=output,
-        use_linformer=True,
-        linformer_k=96,
+def get_transformer(seq_len, num_phenos, max_seq_pos, vocab_size, batch_size, device, cls_tok, output):
+    net = TransformerModel(
+        get_encoder(seq_len, num_phenos, max_seq_pos, vocab_size, batch_size, device, cls_tok),
+        seq_len, num_phenos, output
     )
     return net
 
@@ -451,7 +441,7 @@ def main():
     # test_split = 0.05 #TODO: just for testing
     train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(2, test_frac, verify_frac)
 
-    batch_size = 30
+    batch_size = 10
     num_epochs = 100
     lr = 1e-7
     output = "tok"
@@ -498,7 +488,7 @@ def main():
     encoder = nn.DataParallel(encoder, use_device_ids)
     torch.save(encoder.state_dict(), encoder_file)
 
-    pt_batch_size = 30
+    pt_batch_size = batch_size
     pt_epochs = 1
     pt_lr = 1e-7
     pt_net_name = "bs-{}_epochs-{}_lr-{}_pretrained.net".format(pt_batch_size, pt_epochs, pt_lr)

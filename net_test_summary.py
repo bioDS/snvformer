@@ -35,13 +35,16 @@ batch_size = 10
 # net_file = "66k_gwas_encv-2_batch-20_epochs-100_p-65803_n-18776_epoch-100_test_split-0.05_net.pickle"
 # net_file = "66k_gwas_encv-2_batch-90_epochs-150_p-65803_n-18776_epoch-300_net.pickle"
 # net_file = "net_epochs/66k_gwas_batch-60_epoch-240_test_split-0.3_net.pickle"
-net_file = "./66k_gwas_encv-2_batch-60_epochs-200_p-65803_n-18776_epoch-400_output-binary_net.pickle"
+# net_file = "./66k_gwas_encv-2_batch-60_epochs-200_p-65803_n-18776_epoch-400_output-binary_net.pickle"
+net_file = "./net_epochs/genotyped_p1e-1_batch-10_epoch-40_test_split-0.25_net.pickle"
 # net_file = "66k_gwas_batch-90_epoch-210_net.pickle"
 # net_file = "66k_gwas_batch-90_epoch-210_net.pickle"
-with open(net_file + "_test.pickle", "rb") as f:
+test_file = "./saved_nets/genotyped_p1e-1_encv-2_batch-10_epochs-100_p-65803_n-18776_epoch-100_test_split-0.25_output-tok_net.pickle_test.pickle"
+# test_file = net_file = "_test.pickle"
+with open(test_file, "rb") as f:
     test = pickle.load(f)
-# with open("genotyped_p1e-1_encv-2_geno_cache.pickle", "rb") as f:
-with open("66k_gwas_encv-2_geno_cache.pickle", "rb") as f:
+with open("cache/genotyped_p1e-1_encv-2_X_cache.pickle", "rb") as f:
+# with open("cache/66k_gwas_encv-2_geno_cache.pickle", "rb") as f:
     geno = pickle.load(f)
 
 # net_name = "{}_ai-{}_batch-{}_epochs-{}_p-{}_n-{}_controlx-{}_net.pickle".format(
@@ -52,9 +55,9 @@ with open("66k_gwas_encv-2_geno_cache.pickle", "rb") as f:
 
 num_phenos = 3
 max_seq_pos = geno.positions.max()
-use_device_ids = [5]
+use_device_ids = [4]
 device = torch.device('cuda:{}'.format(use_device_ids[0]))
-net = get_transformer(geno.tok_mat.shape[1], num_phenos, max_seq_pos, geno.num_toks, batch_size, device, "binary")
+net = get_transformer(geno.tok_mat.shape[1], num_phenos, max_seq_pos, geno.num_toks, batch_size, device, geno.string_to_tok["cls"], "tok")
 net = nn.DataParallel(net, use_device_ids).to(use_device_ids[0])
 net.load_state_dict(torch.load(net_file))
 net = net.to(device)
