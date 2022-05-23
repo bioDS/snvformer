@@ -86,73 +86,20 @@ def get_transformer(seq_len, num_phenos, max_seq_pos, vocab_size, batch_size, de
         seq_len,
         num_phenos,
         max_seq_pos,
-        embed_dim=64,
+        embed_dim=96,
         num_heads=4,
-        num_layers=4,
+        num_layers=6,
         vocab_size=vocab_size,
         batch_size=batch_size,
         device=device,
         output_type=output,
         use_linformer=True,
-        linformer_k=64,
+        linformer_k=96,
     )
     return net
 
 def get_train_test_simple(geno, pheno, test_split):
     pass
-
-def get_train_test(input_phenos, geno, pheno, test_split):
-    # urate = pheno["urate"].values
-    gout = pheno["gout"].values
-    # test_cutoff = (int)(math.ceil(test_split * geno.tok_mat.shape[0]))
-
-    test_num_gout = (int)(math.ceil(np.sum(gout)*test_split))
-    train_num_gout = np.sum(gout) - test_num_gout
-    train_gout_pos = np.random.choice(np.where(gout)[0], train_num_gout, replace=False)
-    test_gout_pos = np.setdiff1d(np.where(gout), train_gout_pos)
-    train_gout_pos.sort()
-    test_gout_pos.sort()
-
-    train_control_pos = np.random.choice(np.where(gout == False)[0], train_num_gout, replace=False)
-    test_control_pos = np.random.choice(np.setdiff1d(np.where(gout == False)[0], train_control_pos), test_num_gout, replace=False)
-    train_control_pos.sort()
-    test_control_pos.sort()
-
-    train_all_pos = np.concatenate([train_control_pos, train_gout_pos])
-    test_all_pos = np.concatenate([test_control_pos, test_gout_pos])
-
-    positions = geno.positions
-    test_seqs = geno.tok_mat[test_all_pos,]
-    test_phes = gout[test_all_pos]
-    train_seqs = geno.tok_mat[train_all_pos]
-    train_phes = gout[train_all_pos]
-    print("seqs shape: ", train_seqs.shape)
-    print("phes shape: ", train_phes.shape)
-
-    age = input_phenos["age"]
-    bmi = input_phenos["bmi"]
-    # 0 == Male, 1 == Female
-    sex = torch.tensor(input_phenos["sex"].values == "Female", dtype=torch.int64)
-    input_pheno_vec = torch.tensor(np.array([
-        np.array(age.values),
-        np.array(sex),
-        np.array(bmi),
-    ], dtype=np.int64), dtype=torch.int64).t()
-    train_pheno_vec = input_pheno_vec[train_all_pos,]
-    test_pheno_vec = input_pheno_vec[test_all_pos,]
-    # training_dataset = data.TensorDataset(
-    #     tensor(train_seqs, device=device), tensor(train_phes, dtype=torch.int64)
-    # )
-    # test_dataset = data.TensorDataset(
-    #     tensor(test_seqs, device=device), tensor(test_phes, dtype=torch.int64)
-    # )
-    training_dataset = data.TensorDataset(
-        train_pheno_vec, positions.repeat(len(train_seqs), 1), train_seqs, tensor(train_phes, dtype=torch.int64)
-    )
-    test_dataset = data.TensorDataset(
-        test_pheno_vec, positions.repeat(len(test_seqs), 1), test_seqs, tensor(test_phes, dtype=torch.int64)
-    )
-    return training_dataset, test_dataset
 
 def mask_sequence(seqs, frac, tokenised_snvs: Tokenised_SNVs):
     rng = np.random.default_rng()
@@ -490,47 +437,22 @@ def dataset_random_n(set: data.TensorDataset, n: int):
     )
     return subset
 
-def get_data(enc_ver, test_split):
-    train_phenos_file = cache_dir + plink_base + '_encv-' + str(enc_ver) + '_train_phenos_cache.pickle'
-    X_file = cache_dir + plink_base + '_encv-' + str(enc_ver) + '_X_cache.pickle'
-    Y_file = cache_dir + plink_base +'_encv-' + str(enc_ver) +  '_Y_cache.pickle'
-    if exists(X_file) and exists(Y_file) and exists(train_phenos_file):
-        with open(X_file, "rb") as f:
-            X = pickle.load(f)
-        with open(Y_file, "rb") as f:
-            Y = pickle.load(f)
-        with open(train_phenos_file, "rb") as f:
-            train_phenos = pickle.load(f)
-    else:
-        print("reading data from plink")
-        train_phenos, X, Y = read_from_plink(small_set=False, subsample_control=True, encoding=enc_ver)
-        print("done, writing to pickle")
-        with open(train_phenos_file, "wb") as f:
-            pickle.dump(train_phenos, f, pickle.HIGHEST_PROTOCOL)
-        with open(X_file, "wb") as f:
-            pickle.dump(X, f, pickle.HIGHEST_PROTOCOL)
-        with open(Y_file, "wb") as f:
-            pickle.dump(Y, f, pickle.HIGHEST_PROTOCOL)
-        print("done")
-
-    train, test = get_train_test(train_phenos, X, Y, test_split)
-    return train, test, X, Y, enc_ver
-
 def main():
     # device = "cuda" if torch.cuda.is_available() else "cpu"
     # if (torch.cuda.device_count() > 1):
     #     device = torch.device('cuda:1')
-    use_device_ids=[0,6]
+    use_device_ids=[5]
     device = use_device_ids[0]
     home_dir = os.environ.get("HOME")
     os.chdir(home_dir + "/work/gout-transformer")
 
-    test_split = 0.3
+    test_frac = 0.25
+    verify_frac = 0.05
     # test_split = 0.05 #TODO: just for testing
-    train, test, geno, pheno, enc_ver = get_data(2, test_split)
+    train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(2, test_frac, verify_frac)
 
-    batch_size = 240
-    num_epochs = 50
+    batch_size = 30
+    num_epochs = 100
     lr = 1e-7
     output = "tok"
     # output = "binary"
@@ -540,7 +462,7 @@ def main():
     new_net_name = net_dir + "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_test_split-{}_output-{}_net.pickle".format(
         plink_base, str(enc_ver), batch_size, num_epochs,
         geno.tok_mat.shape[1], geno.tok_mat.shape[0], new_epoch,
-        test_split, output
+        test_frac, output
     )
 
     # Pre-training
@@ -549,7 +471,7 @@ def main():
         with open(pt_pickle, "rb") as f:
             pretrain_snv_toks = pickle.load(f)
     else:
-        pretrain_snv_toks = get_pretrain_dataset(enc_ver)
+        pretrain_snv_toks = get_pretrain_dataset(train_ids, enc_ver)
         with open(pt_pickle, "wb") as f:
             pickle.dump(pretrain_snv_toks, f)
 
@@ -576,8 +498,8 @@ def main():
     encoder = nn.DataParallel(encoder, use_device_ids)
     torch.save(encoder.state_dict(), encoder_file)
 
-    pt_batch_size = 240
-    pt_epochs = 20
+    pt_batch_size = 30
+    pt_epochs = 1
     pt_lr = 1e-7
     pt_net_name = "bs-{}_epochs-{}_lr-{}_pretrained.net".format(pt_batch_size, pt_epochs, pt_lr)
     pt_log_file = open(pt_net_name + ".log", "w")
@@ -595,7 +517,7 @@ def main():
         prev_epoch = 200
         prev_batch_size = 60
         prev_net_name = net_dir + "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_test_split-{}_output-{}_net.pickle".format(
-            plink_base, str(enc_ver), prev_batch_size, prev_epoch, geno.tok_mat.shape[1], geno.tok_mat.shape[0], prev_epoch, test_split, output
+            plink_base, str(enc_ver), prev_batch_size, prev_epoch, geno.tok_mat.shape[1], geno.tok_mat.shape[0], prev_epoch, test_frac, output
     )
         net.load_state_dict(torch.load(prev_net_name))
         new_epoch = prev_epoch + num_epochs
@@ -604,10 +526,12 @@ def main():
         )
     else:
         prev_epoch = 0
-        with open(new_net_name + "_test.pickle", "wb") as f:
-            pickle.dump(test, f, pickle.HIGHEST_PROTOCOL)
         with open(new_net_name + "_train.pickle", "wb") as f:
             pickle.dump(train, f, pickle.HIGHEST_PROTOCOL)
+        with open(new_net_name + "_test.pickle", "wb") as f:
+            pickle.dump(test, f, pickle.HIGHEST_PROTOCOL)
+        with open(new_net_name + "_verify.pickle", "wb") as f:
+            pickle.dump(verify, f, pickle.HIGHEST_PROTOCOL)
     net = net.to(use_device_ids[0])
 
     train_log_file = open(new_net_name + "_log.txt", "w")
@@ -616,7 +540,7 @@ def main():
     print("test dataset: ", check_pos_neg_frac(test))
     # prepend_cls_tok(train, geno.string_to_tok['cls'])
     # prepend_cls_tok(test, geno.string_to_tok['cls'])
-    train_net(net, train, test, batch_size, num_epochs, device, lr, prev_epoch, test_split, train_log_file)
+    train_net(net, train, test, batch_size, num_epochs, device, lr, prev_epoch, test_frac, train_log_file)
 
     train_log_file.close()
     # net = get_mlp(geno.tok_mat.shape[1], geno.num_toks, max_seq_pos, device)
