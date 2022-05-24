@@ -270,8 +270,8 @@ class PositionWiseFFN(nn.Module):
     def __init__(self, num_in, num_hidden, num_out, device='cpu') -> None:
         super().__init__()
         self.dense1 = nn.Linear(num_in, num_hidden, device=device) 
-        self.relu = nn.ReLU()
+        self.gelu = nn.GELU()
         self.dense2 = nn.Linear(num_in, num_hidden, device=device)
     
     def forward(self, X):
-        return self.dense2(self.relu(self.dense1(X)))
+        return self.dense2(self.gelu(self.dense1(X)))
