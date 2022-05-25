@@ -54,10 +54,11 @@ class TokenOutput(nn.Module):
         super().__init__()
         dense = nn.Linear(embed_dim, 2)
         self.softmax = nn.Softmax(1)
-        self.final_layer = nn.Sequential(dense, self.softmax)
+        self.final_layer = nn.Sequential(dense, nn.GELU(), self.softmax)
 
     def forward(self, enc_out):
         cls_tok, phenos, seq_out = enc_out
+        self.last_input = cls_tok
         return self.final_layer(cls_tok)
 
 # pre-trainable model

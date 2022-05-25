@@ -12,6 +12,7 @@ from snp_input import *
 from self_attention_net import *
 
 plink_base = os.environ['PLINK_FILE']
+pretrain_base = os.environ['PRETRAIN_PLINK_FILE']
 cache_dir = "./cache/"
 
 class simple_mlp(nn.Module):
@@ -268,6 +269,8 @@ def train_net(
     # check binary accuracy on test set:
     test_total_correct = 0.0
     test_total_incorrect = 0.0
+    sum_loss = 0.0
+    test_loss = 0.0
     with torch.no_grad():
         for phenos, pos, tX, tY in test_iter:
             pos = pos.to(device)
@@ -281,6 +284,8 @@ def train_net(
             num_correct = torch.sum(correct)
             test_total_correct += num_correct
             test_total_incorrect += len(tX) - num_correct
+            l = loss(tYh, tY)
+            test_loss += l.mean()
     train_total_correct = 0.0
     train_total_incorrect = 0.0
     with torch.no_grad():
@@ -296,13 +301,19 @@ def train_net(
             num_correct = torch.sum(correct)
             train_total_correct += num_correct
             train_total_incorrect += len(tX) - num_correct
-    print(
-        "fraction correct: {:.3f} (train), {:.3f} (test)".format(
+            l = loss(tYh, tY)
+            sum_loss += l.mean()
+    tmpstr = "epoch {}, mean loss {:.3}, {:.3} (test)".format(
+            e, sum_loss / len(training_iter), test_loss / len(test_iter))
+    print(tmpstr)
+    train_log_file.write(tmpstr)
+    tmpstr = "final fraction correct: {:.3f} (train), {:.3f} (test)".format(
             train_total_correct /
             (train_total_correct + train_total_incorrect),
             test_total_correct / (test_total_correct + test_total_incorrect),
         )
-    )
+    print(tmpstr)
+    train_log_file.write(tmpstr)
 
 
 def reduce_to_half(train):
@@ -456,7 +467,7 @@ def main():
     )
 
     # Pre-training
-    pt_pickle = cache_dir + "66k_pretrain.pickle"
+    pt_pickle = cache_dir + pretrain_base + "_pretrain.pickle"
     if exists(pt_pickle):
         with open(pt_pickle, "rb") as f:
             pretrain_snv_toks = pickle.load(f)
@@ -486,10 +497,9 @@ def main():
     encoder = get_encoder(geno.tok_mat.shape[1], num_phenos, max_seq_pos, pretrain_snv_toks.num_toks, batch_size, device, pretrain_snv_toks.string_to_tok['cls'])
     encoder = encoder.cuda(device)
     encoder = nn.DataParallel(encoder, use_device_ids)
-    torch.save(encoder.state_dict(), encoder_file)
 
     pt_batch_size = batch_size
-    pt_epochs = 1
+    pt_epochs = 50
     pt_lr = 1e-7
     pt_net_name = "bs-{}_epochs-{}_lr-{}_pretrained.net".format(pt_batch_size, pt_epochs, pt_lr)
     pt_log_file = open(pt_net_name + ".log", "w")
@@ -497,6 +507,7 @@ def main():
     # prepend_cls_tok(pretrain_snv_toks.tok_mat, pretrain_snv_toks.string_to_tok['cls'])
     pretrain_encoder(encoder, pretrain_snv_toks, pt_batch_size, pt_epochs, device, pt_lr, pt_log_file)
     pt_log_file.close()
+    torch.save(encoder.state_dict(), encoder_file)
 
 
     # Fine-tuning

@@ -255,16 +255,6 @@ class AddNorm(nn.Module):
         
     def forward(self, residual, X):
         return self.ln(self.dropout(X) + residual)
-
-    def lrp_forward(self, residual, X):
-        # return self.ln(self.dropout(X) + residual)
-        mean = torch.mean(X)
-        X = X - mean
-        var = torch.var(X)
-        eps = 1e-5
-        sqrt = torch.sqrt(eps + var).detach()
-        return X/sqrt
-
     
 class PositionWiseFFN(nn.Module):
     def __init__(self, num_in, num_hidden, num_out, device='cpu') -> None:

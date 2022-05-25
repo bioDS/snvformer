@@ -10,14 +10,14 @@ import numpy as np
 import os
 from snp_input import *
 from self_attention_net import *
-from snp_network import get_data, get_transformer
+from snp_network import get_data, get_transformer, transformer_from_encoder, get_encoder
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn import metrics
 
-
 plink_base = os.environ['PLINK_FILE']
+pretrain_base = os.environ['PRETRAIN_PLINK_FILE']
 
 home_dir = os.environ.get("HOME")
 os.chdir(home_dir + "/work/gout-transformer")
@@ -36,16 +36,17 @@ batch_size = 10
 # net_file = "66k_gwas_encv-2_batch-90_epochs-150_p-65803_n-18776_epoch-300_net.pickle"
 # net_file = "net_epochs/66k_gwas_batch-60_epoch-240_test_split-0.3_net.pickle"
 # net_file = "./66k_gwas_encv-2_batch-60_epochs-200_p-65803_n-18776_epoch-400_output-binary_net.pickle"
-net_file = "./net_epochs/genotyped_p1e-1_batch-10_epoch-40_test_split-0.25_net.pickle"
+net_file = "./net_epochs/genotyped_p1e-1_batch-10_epoch-80_test_split-0.25_net.pickle"
+# net_file = "./saved_nets/genotyped_p1e-1_encv-2_batch-10_epochs-100_p-65803_n-18776_epoch-100_test_split-0.25_output-tok_net.pickle"
 # net_file = "66k_gwas_batch-90_epoch-210_net.pickle"
 # net_file = "66k_gwas_batch-90_epoch-210_net.pickle"
 test_file = "./saved_nets/genotyped_p1e-1_encv-2_batch-10_epochs-100_p-65803_n-18776_epoch-100_test_split-0.25_output-tok_net.pickle_test.pickle"
 # test_file = net_file = "_test.pickle"
-with open(test_file, "rb") as f:
-    test = pickle.load(f)
-with open("cache/genotyped_p1e-1_encv-2_X_cache.pickle", "rb") as f:
-# with open("cache/66k_gwas_encv-2_geno_cache.pickle", "rb") as f:
-    geno = pickle.load(f)
+#with open(test_file, "rb") as f:
+#    test = pickle.load(f)
+#with open("cache/genotyped_p1e-1_encv-2_X_cache.pickle", "rb") as f:
+## with open("cache/66k_gwas_encv-2_geno_cache.pickle", "rb") as f:
+#    geno = pickle.load(f)
 
 # net_name = "{}_ai-{}_batch-{}_epochs-{}_p-{}_n-{}_controlx-{}_net.pickle".format(
 #     plink_base, str(use_ai_encoding), batch_size, num_epochs, geno.tok_mat.shape[1], geno.tok_mat.shape[0], control_scale
@@ -53,11 +54,29 @@ with open("cache/genotyped_p1e-1_encv-2_X_cache.pickle", "rb") as f:
 # net_file = "ai-True_batch-180_epochs-150_p-65803_n-18776_net.pickle"
 # net_file = "new_enc_50_epochs_0596_test_network.pickle"
 
+# Pre-training
+test_frac = 0.25
+verify_frac = 0.05
+output = "tok"
+train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(2, test_frac, verify_frac)
+pt_pickle = cache_dir + pretrain_base + "_pretrain.pickle"
+if exists(pt_pickle):
+    with open(pt_pickle, "rb") as f:
+        pretrain_snv_toks = pickle.load(f)
+else:
+    pretrain_snv_toks = get_pretrain_dataset(train_ids, enc_ver)
+    with open(pt_pickle, "wb") as f:
+        pickle.dump(pretrain_snv_toks, f)
+
 num_phenos = 3
 max_seq_pos = geno.positions.max()
-use_device_ids = [4]
-device = torch.device('cuda:{}'.format(use_device_ids[0]))
-net = get_transformer(geno.tok_mat.shape[1], num_phenos, max_seq_pos, geno.num_toks, batch_size, device, geno.string_to_tok["cls"], "tok")
+use_device_ids = [5]
+device = use_device_ids[0]
+encoder = get_encoder(geno.tok_mat.shape[1], num_phenos, max_seq_pos, pretrain_snv_toks.num_toks, batch_size, device, pretrain_snv_toks.string_to_tok['cls'])
+encoder = encoder.cuda(device)
+encoder = nn.DataParallel(encoder, use_device_ids)
+net = transformer_from_encoder(encoder.module, geno.tok_mat.shape[1], num_phenos, output)
+# net = get_transformer(geno.tok_mat.shape[1], num_phenos, max_seq_pos, geno.num_toks, batch_size, device, geno.string_to_tok["cls"], "tok")
 net = nn.DataParallel(net, use_device_ids).to(use_device_ids[0])
 net.load_state_dict(torch.load(net_file))
 net = net.to(device)
@@ -67,16 +86,22 @@ test_iter = data.DataLoader(test, (int)(batch_size), shuffle=False)
 actual_vals = []
 predicted_vals = []
 nn_scores = []
+test_loss = 0.0
+loss = nn.CrossEntropyLoss()
 with torch.no_grad():
     for phenos, pos, tX, tY in test_iter:
         tX = tX.to(device)
         tYh = net(phenos, tX, pos)
+        tY = tY.to(device)
+        l = loss(tYh, tY)
+        test_loss += l.mean()
         binary_tYh = tYh[:, 1] > 0.5
         binary_tY = tY > 0.5
         actual_vals.extend(binary_tY.cpu().numpy())
         predicted_vals.extend(binary_tYh.cpu().numpy())
         nn_scores.extend(tYh[:, 1].cpu().numpy())
 
+print("mean loss: {}", test_loss/len(test_iter))
 test_results = pd.DataFrame({"Score": nn_scores, "Predicted": predicted_vals, "Actual": actual_vals})
 test_results["Correct"] = test_results["Predicted"] == test_results["Actual"]
 
