@@ -73,20 +73,10 @@ class D2LDotProductAttention(nn.Module):
         # print("keys  shape {}".format(keys.transpose(1,2).shape))
         scores = torch.bmm(queries, keys.transpose(1,2)) / math.sqrt(d)
         # print("scores shape: {}".format(scores.shape))
-        quit
         self.attention_weights = masked_softmax(scores, valid_lens)
         self.attention_weights.requires_grad_()
         self.attention_weights.retain_grad()
         return torch.bmm(self.dropout(self.attention_weights), values)
-    # def lrp_forward(self, queries, keys, values, valid_lens=None):
-    #     d = queries.shape[-1]
-    #     # Set `transpose_b=True` to swap the last two dimensions of `keys`
-    #     scores = torch.bmm(queries, keys.transpose(1,2)) / math.sqrt(d)
-    #     if self.use_sparsemax:
-    #         self.attention_weights = masked_sparsemax(scores, valid_lens)
-    #     else:
-    #         self.attention_weights = masked_softmax(scores, valid_lens)
-    #     return torch.bmm(self.dropout(self.attention_weights).detach(), values)
 
 def transpose_qkv(X, num_heads):
     """Transposition for parallel computation of multiple attention heads."""

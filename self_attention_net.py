@@ -69,7 +69,9 @@ class Encoder(nn.Module):
         self.cls_tok = cls_tok
         self.seq_len = seq_len
         self.num_phenos = num_phenos
+        self.combined_seq_len = seq_len + num_phenos + 1
         self.device = device
+        self.num_heads = num_heads
         # self.embedding = nn.Embedding(vocab_size, embedding_dim=embed_dim)
         self.pos_size = embed_dim - vocab_size
         self.embed_dim = embed_dim
@@ -82,7 +84,7 @@ class Encoder(nn.Module):
         self.pos_encoding = ExplicitPositionalEncoding(self.pos_size, max_len=max_seq_pos+1)
         self.blocks = []
         for _ in range(num_layers):
-            new_block = TransformerBlock(seq_len+num_phenos+1, embed_dim, num_heads, vocab_size, batch_size, device, use_linformer, linformer_k) # seq_len + 1 to include cls tok
+            new_block = TransformerBlock(self.combined_seq_len, embed_dim, num_heads, vocab_size, batch_size, device, use_linformer, linformer_k) # seq_len + 1 to include cls tok
             self.blocks.append(new_block)
         self.blocks = nn.ModuleList(self.blocks)
 
@@ -120,4 +122,39 @@ class TransformerModel(nn.Module):
 
     def forward(self, phenos, x, pos):
         enc_out = self.encoder(phenos, x, pos)
-        return self.output(enc_out)
+        out = self.output(enc_out)
+        self.last_output = out
+        return out
+
+    # N.B. resets gradients, don't use during training.
+    # (for the moment) only checks the first entry in the batch
+    def get_relevance_last_class(self):
+        trainer = torch.optim.SGD(self.parameters(), lr=1e-7)
+        trainer.zero_grad()
+        self.last_output[0,1].backward()
+
+        batch_size = self.last_output.shape[0]
+        # combined_seq_len includes [cls] and phenotypes
+        R = torch.eye(self.encoder.combined_seq_len).repeat(batch_size, 1, 1)
+        # R_init should be (batch_size, seq, seq)
+
+        # calculate \bar{A} for each layer of the encoder.
+        for block in self.encoder.blocks:
+            A_prod = (block.A.grad * block.A) # elementwise (\nabla A \cdot A)
+            # average positive elements of A_prod
+            num_positive = torch.sum(A_prod >= 0.0)
+            A_pos_prod = torch.maximum(torch.zeros_like(A_prod), A_prod)
+            A_bar = A_pos_prod
+            # shape of A_bar: (batch * heads, seq, lin_k)
+            A_bar = A_bar.reshape(-1, self.encoder.num_heads, A_bar.shape[1], A_bar.shape[2])
+            # shape of A_bar (batch, num_heads, seq, lin_k)
+            A_bar = torch.sum(A_bar, 1)
+            # shape of A_bar (batch, seq, lin_k)
+
+            # account for linformer (TODO: are we breaking anything here?)
+            # we do the same thing to the releveance that we did to the keys.
+            linformer_R = block.E_i(R.swapaxes(1,2)).swapaxes(1,2)
+            #linformer_R should be (batch, lin_k, seq)
+            R = R + torch.bmm(A_bar, linformer_R)
+
+        return R[:,0,:] # relevance w.r.t. the [cls] output.
