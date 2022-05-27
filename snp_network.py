@@ -276,6 +276,7 @@ def train_net(
             pos = pos.to(device)
             phenos = phenos.to(device)
             tX = tX.to(device)
+            tY = tY.to(device)
             tYh = net(phenos, tX, pos)
             binary_tYh = tYh[:, 1] > 0.5
             binary_tY = tY > 0.5
@@ -291,6 +292,7 @@ def train_net(
     with torch.no_grad():
         for phenos, pos, tX, tY in training_iter:
             tX = tX.to(device)
+            tY = tY.to(device)
             pos = pos.to(device)
             phenos = phenos.to(device)
             tYh = net(phenos, tX, pos)
