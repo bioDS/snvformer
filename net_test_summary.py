@@ -37,7 +37,7 @@ batch_size = 10
 # net_file = "net_epochs/66k_gwas_batch-60_epoch-240_test_split-0.3_net.pickle"
 # net_file = "./66k_gwas_encv-2_batch-60_epochs-200_p-65803_n-18776_epoch-400_output-binary_net.pickle"
 # net_file = "./net_epochs/genotyped_p1e-1_batch-10_epoch-80_test_split-0.25_net.pickle"
-net_file = "./net_epochs/genotyped_p1e-1_batch-10_epoch-10_test_split-0.25_net.pickle"
+net_file = "./net_epochs/genotyped_p1e-1_batch-10_epoch-90_test_split-0.25_net.pickle"
 # net_file = "./saved_nets/genotyped_p1e-1_encv-2_batch-10_epochs-100_p-65803_n-18776_epoch-100_test_split-0.25_output-tok_net.pickle"
 # net_file = "66k_gwas_batch-90_epoch-210_net.pickle"
 # net_file = "66k_gwas_batch-90_epoch-210_net.pickle"
@@ -57,7 +57,7 @@ test_file = "./saved_nets/genotyped_p1e-1_encv-2_batch-10_epochs-100_p-65803_n-1
 
 # Pre-training
 test_frac = 0.25
-verify_frac = 0.05
+verify_frac = 0.0
 output = "tok"
 train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(2, test_frac, verify_frac)
 pt_pickle = cache_dir + pretrain_base + "_pretrain.pickle"
@@ -85,62 +85,64 @@ net = net.to(device)
 
 test_iter = data.DataLoader(test, (int)(batch_size), shuffle=False)
 
+def get_contributions(phenos, pos, tX, tY):
+    phenos = phenos.unsqueeze(0)
+    tX = tX.unsqueeze(0).to(device)
+    pos = pos.unsqueeze(0)
+    net = net.to(device)
+    tYh = net(phenos, tX, pos)
+    # for phenos, pos, tX, tY in test_iter:
+    #     tX = tX.to(device)
+    #     tYh = net(phenos, tX, pos)
+    #     break
+    # R = net.module.get_relevance_last_class()
+    # N.B. resets gradients, don't use during training.
+    # (for the moment) only checks the first entry in the batch
+    # def get_relevance_last_class(self):
+    trainer = torch.optim.SGD(net.module.parameters(), lr=1e-7)
+    trainer.zero_grad()
+    net.module.last_output[0,1].backward()
+    batch_size = net.module.last_output.shape[0]
+    # combined_seq_len includes [cls] and phenotypes
+    # N.B. R is ~ batch * seq * seq, likely won't fit on device.
+    R = torch.eye(net.module.encoder.combined_seq_len)
+    # R_init should be (batch_size, seq, seq)
+    num_heads = net.module.encoder.num_heads
+    # calculate \bar{A} for each layer of the encoder.
+    for block in net.module.encoder.blocks:
+        A_prod = (block.A.grad[:num_heads,:,:] * block.A[:num_heads,:,:]) # elementwise (\nabla A \cdot A)
+        A_prod = A_prod.to('cpu')
+        block = block.to('cpu')
+        # average positive elements of A_prod
+        num_positive = torch.sum(A_prod >= 0.0)
+        A_bar = torch.maximum(torch.zeros_like(A_prod), A_prod)
+        # shape of A_bar: (batch * heads, seq, lin_k)
+        # A_bar = A_bar.reshape(-1, net.module.encoder.num_heads, A_bar.shape[1], A_bar.shape[2])
+        # shape of A_bar (batch, num_heads, seq, lin_k)
+        A_bar = torch.sum(A_bar, 0) / num_positive
+        # shape of A_bar (batch, seq, lin_k)
+        # account for linformer (TODO: are we breaking anything here?)
+        # we do the same thing to the releveance that we did to the keys.
+        linformer_R = block.attention.E_i(R.swapaxes(0,1)).swapaxes(0,1)
+        linformer_R = torch.maximum(torch.zeros_like(linformer_R), linformer_R)
+        #linformer_R should be (batch, lin_k, seq)
+        R[:] = R + torch.matmul(A_bar, linformer_R)
+    R_adjusted = R - torch.eye(net.module.encoder.combined_seq_len)
+    # N.B. includes [cls] and phenotypes
+    cls_contributions = R[0,:]
+    cont_sum = torch.sum(cls_contributions[1:])
+    pheno_contributions = cls_contributions[1:num_phenos+1] / cont_sum
+    seq_contributions = cls_contributions[num_phenos+1:] / cont_sum
+    return pheno_contributions, seq_contributions
+
 # relevance test
-phenos, pos, tX, tY = test[4500] # has gout
-# phenos, pos, tX, tY = test[0] # does not
-phenos = phenos.unsqueeze(0)
-tX = tX.unsqueeze(0).to(device)
-pos = pos.unsqueeze(0)
-net = net.to(device)
-tYh = net(phenos, tX, pos)
-# for phenos, pos, tX, tY in test_iter:
-#     tX = tX.to(device)
-#     tYh = net(phenos, tX, pos)
-#     break
-
-# R = net.module.get_relevance_last_class()
-
-# N.B. resets gradients, don't use during training.
-# (for the moment) only checks the first entry in the batch
-# def get_relevance_last_class(self):
-trainer = torch.optim.SGD(net.module.parameters(), lr=1e-7)
-trainer.zero_grad()
-net.module.last_output[0,1].backward()
-
-batch_size = net.module.last_output.shape[0]
-# combined_seq_len includes [cls] and phenotypes
-# N.B. R is ~ batch * seq * seq, likely won't fit on device.
-R = torch.eye(net.module.encoder.combined_seq_len)
-# R_init should be (batch_size, seq, seq)
-num_heads = net.module.encoder.num_heads
-
-# calculate \bar{A} for each layer of the encoder.
-for block in net.module.encoder.blocks:
-    A_prod = (block.A.grad[:num_heads,:,:] * block.A[:num_heads,:,:]) # elementwise (\nabla A \cdot A)
-    A_prod = A_prod.to('cpu')
-    block = block.to('cpu')
-    # average positive elements of A_prod
-    num_positive = torch.sum(A_prod >= 0.0)
-    A_bar = torch.maximum(torch.zeros_like(A_prod), A_prod)
-    # shape of A_bar: (batch * heads, seq, lin_k)
-    # A_bar = A_bar.reshape(-1, net.module.encoder.num_heads, A_bar.shape[1], A_bar.shape[2])
-    # shape of A_bar (batch, num_heads, seq, lin_k)
-    A_bar = torch.sum(A_bar, 0) / num_positive
-    # shape of A_bar (batch, seq, lin_k)
-    # account for linformer (TODO: are we breaking anything here?)
-    # we do the same thing to the releveance that we did to the keys.
-    linformer_R = block.attention.E_i(R.swapaxes(0,1)).swapaxes(0,1)
-    linformer_R = torch.maximum(torch.zeros_like(linformer_R), linformer_R)
-    #linformer_R should be (batch, lin_k, seq)
-    R[:] = R + torch.matmul(A_bar, linformer_R)
-
-R_adjusted = R - torch.eye(net.module.encoder.combined_seq_len)
-
-# N.B. includes [cls] and phenotypes
-cls_contributions = R[0,:]
-cont_sum = torch.sum(cls_contributions[1:])
-pheno_contributions = cls_contributions[1:num_phenos+1] / cont_sum
-seq_contributions = cls_contributions[num_phenos+1:] / cont_sum
+#a, b, c, d = test[4500]
+#pheno_contributions, seq_contributions = get_contributions(a, b, c, d)
+#for ind in range(4501,4550):
+#    a, b, c, d = test[ind]
+#    ph, se = get_contributions(a, b, c, d)
+#    pheno_contributions = pheno_contributions + ph
+#    seq_contributions = seq_contributions + se
 
 # check binary accuracy on test set:
 actual_vals = []
