@@ -3,6 +3,7 @@ from torch import nn
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 import math
 from torch import Tensor
+from sparsemax import Sparsemax
 
 def sequence_mask(X, valid_len, value=0):
     """Mask irrelevant entries in sequences."""
@@ -11,6 +12,24 @@ def sequence_mask(X, valid_len, value=0):
                         device=X.device)[None, :] < valid_len[:, None]
     X[~mask] = value
     return X
+
+def masked_sparsemax(X, valid_lens):
+    """Perform softmax operation by masking elements on the last axis."""
+    # `X`: 3D tensor, `valid_lens`: 1D or 2D tensor
+    sparsemax = Sparsemax(dim=-1)
+    if valid_lens is None:
+        return sparsemax(X)
+    else:
+        shape = X.shape
+        if valid_lens.dim() == 1:
+            valid_lens = torch.repeat_interleave(valid_lens, shape[1])
+        else:
+            valid_lens = valid_lens.reshape(-1)
+        # On the last axis, replace masked elements with a very large negative
+        # value, whose exponentiation outputs 0
+        X = sequence_mask(X.reshape(-1, shape[-1]), valid_lens,
+                              value=-1e6)
+        return sparsemax(X.reshape(shape), dim=-1)
 
 def masked_softmax(X, valid_lens):
     """Perform softmax operation by masking elements on the last axis."""
@@ -57,9 +76,10 @@ class D2LAdditiveAttention(nn.Module):
 
 class D2LDotProductAttention(nn.Module):
     """Scaled dot product attention."""
-    def __init__(self, dropout, **kwargs):
+    def __init__(self, dropout, use_sparsemax, **kwargs):
         super(D2LDotProductAttention, self).__init__(**kwargs)
         self.dropout = nn.Dropout(dropout)
+        self.use_sparsemax = use_sparsemax
 
     # Shape of `queries`: (`batch_size`, no. of queries, `d`)
     # Shape of `keys`: (`batch_size`, no. of key-value pairs, `d`)
@@ -73,7 +93,10 @@ class D2LDotProductAttention(nn.Module):
         # print("keys  shape {}".format(keys.transpose(1,2).shape))
         scores = torch.bmm(queries, keys.transpose(1,2)) / math.sqrt(d)
         # print("scores shape: {}".format(scores.shape))
-        self.attention_weights = masked_softmax(scores, valid_lens)
+        if (self.use_sparsemax):
+            self.attention_weights = masked_sparsemax(scores, valid_lens)
+        else:
+            self.attention_weights = masked_softmax(scores, valid_lens)
         self.attention_weights.requires_grad_()
         self.attention_weights.retain_grad()
         return torch.bmm(self.dropout(self.attention_weights), values)
@@ -106,10 +129,10 @@ def transpose_output(X, num_heads):
 class LinformerAttention(nn.Module):
     """Multi-head attention."""
     def __init__(self, embed_dim, seq_len, linform_k,
-                 num_heads, dropout, bias=False, **kwargs):
+                 num_heads, dropout, use_sparsemax=True, bias=False, **kwargs):
         super().__init__(**kwargs)
         self.num_heads = num_heads
-        self.attention = D2LDotProductAttention(dropout)
+        self.attention = D2LDotProductAttention(dropout, use_sparsemax)
 
         self.W_q = nn.Linear(embed_dim, embed_dim, bias=bias)
         self.W_k = nn.Linear(embed_dim, embed_dim, bias=bias)
