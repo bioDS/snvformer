@@ -129,7 +129,7 @@ def transpose_output(X, num_heads):
 class LinformerAttention(nn.Module):
     """Multi-head attention."""
     def __init__(self, embed_dim, seq_len, linform_k,
-                 num_heads, dropout, use_sparsemax=True, bias=False, **kwargs):
+                 num_heads, dropout, use_sparsemax=False, bias=False, **kwargs):
         super().__init__(**kwargs)
         self.num_heads = num_heads
         self.attention = D2LDotProductAttention(dropout, use_sparsemax)

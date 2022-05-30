@@ -7,7 +7,7 @@ class TransformerBlock(nn.Module):
         super(TransformerBlock, self).__init__()
         if use_linformer:
             # self.attention = LinformerAttention(embed_dim, seq_len, linformer_k, num_heads, dropout=0.05, device=device)
-            self.attention = LinformerAttention(embed_dim, seq_len, linformer_k, num_heads, dropout=0.05)
+            self.attention = LinformerAttention(embed_dim, seq_len, linformer_k, num_heads, dropout=0.05, use_sparsemax=True)
         else:
             self.attention = D2LMultiHeadAttention(embed_dim, num_heads, dropout=0.05, device=device)
         self.addnorm = AddNorm(embed_dim)
