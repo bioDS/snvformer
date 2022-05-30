@@ -32,6 +32,7 @@ class Tokenised_SNVs:
         # val == 1 means one of each
         tok_mat, tok_to_string, string_to_tok, num_toks = get_tok_mat(geno, encoding)
 
+        self.snp_ids = geno.snp.values
         self.ids = geno.iid.values
         self.string_to_tok = string_to_tok
         self.tok_to_string = tok_to_string
