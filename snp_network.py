@@ -454,7 +454,7 @@ def main():
     # test_split = 0.05 #TODO: just for testing
     train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(2, test_frac, verify_frac)
 
-    batch_size = 10
+    batch_size = 50
     num_epochs = 100
     lr = 1e-7
     output = "tok"
@@ -529,12 +529,12 @@ def main():
         )
     else:
         prev_epoch = 0
-        with open(new_net_name + "_train.pickle", "wb") as f:
-            pickle.dump(train, f, pickle.HIGHEST_PROTOCOL)
-        with open(new_net_name + "_test.pickle", "wb") as f:
-            pickle.dump(test, f, pickle.HIGHEST_PROTOCOL)
-        with open(new_net_name + "_verify.pickle", "wb") as f:
-            pickle.dump(verify, f, pickle.HIGHEST_PROTOCOL)
+        #with open(new_net_name + "_train.pickle", "wb") as f:
+        #    pickle.dump(train, f, pickle.HIGHEST_PROTOCOL)
+        #with open(new_net_name + "_test.pickle", "wb") as f:
+        #    pickle.dump(test, f, pickle.HIGHEST_PROTOCOL)
+        #with open(new_net_name + "_verify.pickle", "wb") as f:
+        #    pickle.dump(verify, f, pickle.HIGHEST_PROTOCOL)
     net = net.to(use_device_ids[0])
 
     train_log_file = open(new_net_name + "_log.txt", "w")
