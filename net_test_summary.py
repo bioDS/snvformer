@@ -37,11 +37,14 @@ batch_size = 10
 # net_file = "net_epochs/66k_gwas_batch-60_epoch-240_test_split-0.3_net.pickle"
 # net_file = "./66k_gwas_encv-2_batch-60_epochs-200_p-65803_n-18776_epoch-400_output-binary_net.pickle"
 # net_file = "./net_epochs/genotyped_p1e-1_batch-10_epoch-80_test_split-0.25_net.pickle"
-net_file = "./net_epochs/genotyped_p1e-1_batch-10_epoch-90_test_split-0.25_net.pickle"
+# net_file = "./net_epochs/genotyped_p1e-1_batch-10_epoch-90_test_split-0.25_net.pickle"
+# net_file = "./net_epochs/all_gwas_batch-50_epoch-80_test_split-0.25_net.pickle"
 # net_file = "./saved_nets/genotyped_p1e-1_encv-2_batch-10_epochs-100_p-65803_n-18776_epoch-100_test_split-0.25_output-tok_net.pickle"
 # net_file = "66k_gwas_batch-90_epoch-210_net.pickle"
 # net_file = "66k_gwas_batch-90_epoch-210_net.pickle"
-test_file = "./saved_nets/genotyped_p1e-1_encv-2_batch-10_epochs-100_p-65803_n-18776_epoch-100_test_split-0.25_output-tok_net.pickle_test.pickle"
+net_file = "./saved_nets/all_gwas_encv-2_batch-50_epochs-100_p-13290_n-18776_epoch-100_test_split-0.25_output-tok_net.pickle"
+# test_file = "./saved_nets/genotyped_p1e-1_encv-2_batch-10_epochs-100_p-65803_n-18776_epoch-100_test_split-0.25_output-tok_net.pickle_test.pickle"
+test_file = "./saved_nets/all_gwas_encv-2_batch-50_epochs-100_p-13290_n-18776_epoch-100_test_split-0.25_output-tok_net.pickle_test.pickle"
 # test_file = net_file = "_test.pickle"
 #with open(test_file, "rb") as f:
 #    test = pickle.load(f)
@@ -57,7 +60,7 @@ test_file = "./saved_nets/genotyped_p1e-1_encv-2_batch-10_epochs-100_p-65803_n-1
 
 # Pre-training
 test_frac = 0.25
-verify_frac = 0.0
+verify_frac = 0.05
 output = "tok"
 train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(2, test_frac, verify_frac)
 pt_pickle = cache_dir + pretrain_base + "_pretrain.pickle"
@@ -85,7 +88,7 @@ net = net.to(device)
 
 test_iter = data.DataLoader(test, (int)(batch_size), shuffle=False)
 
-def get_contributions(phenos, pos, tX, tY):
+def get_contributions(phenos, pos, tX, tY, net):
     phenos = phenos.unsqueeze(0)
     tX = tX.unsqueeze(0).to(device)
     pos = pos.unsqueeze(0)
@@ -136,13 +139,18 @@ def get_contributions(phenos, pos, tX, tY):
     return pheno_contributions, seq_contributions
 
 # relevance test
-#a, b, c, d = test[4500]
-#pheno_contributions, seq_contributions = get_contributions(a, b, c, d)
-#for ind in range(4501,4550):
-#    a, b, c, d = test[ind]
-#    ph, se = get_contributions(a, b, c, d)
-#    pheno_contributions = pheno_contributions + ph
-#    seq_contributions = seq_contributions + se
+a, b, c, d = test[4500]
+pheno_contributions, seq_contributions = get_contributions(a, b, c, d, net)
+with open("last_seq_contributions.pickle", "wb") as f:
+    pickle.dump((pheno_contributions, seq_contributions), f)
+for ind in range(4501,4550):
+   a, b, c, d = test[ind]
+   ph, se = get_contributions(a, b, c, d, net)
+   pheno_contributions = pheno_contributions + ph
+   seq_contributions = seq_contributions + se
+
+with open("last_seq_contributions_bundle.pickle", "wb") as f:
+    pickle.dump((pheno_contributions, seq_contributions), f)
 
 # check binary accuracy on test set:
 actual_vals = []
@@ -150,8 +158,11 @@ predicted_vals = []
 nn_scores = []
 test_loss = 0.0
 loss = nn.CrossEntropyLoss()
+net = net.cuda(device)
 with torch.no_grad():
     for phenos, pos, tX, tY in test_iter:
+        phenos = phenos.to(device)
+        pos = pos.to(device)
         tX = tX.to(device)
         tYh = net(phenos, tX, pos)
         tY = tY.to(device)
