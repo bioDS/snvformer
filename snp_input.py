@@ -244,4 +244,8 @@ def get_data(enc_ver, test_split, verify_split=0.05):
 
 if __name__ == "__main__":
     # snv_toks, urate = read_from_plink(encoding=2)
-    get_data(2, 0.25, 0.05)
+    test_split = 0.25
+    verify_split = 0.05
+    train_ids, train, test_ids, test, verify_ids, verify, X, Y, enc_ver = get_data(2, test_split, verify_split)
+    train_ids, test_ids, verify_ids = get_train_test_verify_ids(Y, test_split, verify_split)
+    get_pretrain_dataset(train_ids)

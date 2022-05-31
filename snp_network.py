@@ -455,7 +455,7 @@ def main():
     # test_split = 0.05 #TODO: just for testing
     train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(2, test_frac, verify_frac)
 
-    batch_size = 50
+    batch_size = 10
     num_epochs = 100
     lr = 1e-7
     output = "tok"
