@@ -10,6 +10,7 @@ import numpy as np
 import os
 from snp_input import *
 from self_attention_net import *
+from tqdm import tqdm
 
 plink_base = os.environ['PLINK_FILE']
 pretrain_base = os.environ['PRETRAIN_PLINK_FILE']
@@ -142,7 +143,7 @@ def pretrain_encoder(
     for e in range(num_epochs):
         sum_loss = 0.0
         num_steps = 0
-        for pos, seqs in training_iter:
+        for pos, seqs in tqdm(training_iter):
             #TODO: actually use phenotypes?
             phenos = torch.zeros(seqs.shape[0], encoder.module.num_phenos)
             # take a subset of SNVs the size of the encoder input
