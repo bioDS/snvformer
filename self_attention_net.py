@@ -72,15 +72,15 @@ class Encoder(nn.Module):
         self.combined_seq_len = seq_len + num_phenos + 1
         self.device = device
         self.num_heads = num_heads
-        # self.embedding = nn.Embedding(vocab_size, embedding_dim=embed_dim)
         self.pos_size = embed_dim - vocab_size
         self.embed_dim = embed_dim
         if self.pos_size % 2 == 1:
             self.pos_size = self.pos_size - 1
         one_hot_embed_size = embed_dim - self.pos_size
         print("encoder 1-hot embedding size: {}".format(one_hot_embed_size))
-        embedding = One_Hot_Embedding(one_hot_embed_size)
-        self.embedding = embedding.embed
+        # embedding = One_Hot_Embedding(one_hot_embed_size)
+        # self.embedding = embedding.embed
+        self.embedding = nn.Embedding(vocab_size, embedding_dim=one_hot_embed_size)
         self.pos_encoding = ExplicitPositionalEncoding(self.pos_size, max_len=max_seq_pos+1)
         self.blocks = []
         for _ in range(num_layers):
@@ -90,13 +90,15 @@ class Encoder(nn.Module):
 
     def forward(self, phenos, x, pos):
         # ex = self.embedding(x.t()).swapaxes(0,1)
-        # prepend 'cls' token to sequence
-        ex = self.embedding(x)
+        ex = self.embedding(x.long())
         # ep = self.pos_encoding(torch.zeros([x.shape[0], x.shape[1], self.pos_size], device=self.device), pos)
         ep = self.pos_encoding(torch.zeros([x.shape[0], x.shape[1], self.pos_size], device=x.device), pos)
         phenos = torch.unsqueeze(phenos, 2).expand(-1,-1, self.pos_size + ex.shape[2]).to(x.device)
         at = torch.cat([ex, ep], dim=2)
-        batch_cls = torch.nn.functional.one_hot(tensor(self.cls_tok), num_classes=self.embed_dim).repeat(x.shape[0], 1).unsqueeze(1).to(x.device)
+        # prepend 'cls' token to sequence
+        # batch_cls = torch.nn.functional.one_hot(tensor(self.cls_tok), num_classes=self.embed_dim).repeat(x.shape[0], 1).unsqueeze(1).to(x.device)
+        batch_cls = self.embedding(tensor(self.cls_tok).to(x.device)).repeat(x.shape[0], 1).unsqueeze(1).to(x.device)
+        batch_cls = torch.cat([batch_cls, torch.zeros(x.shape[0], 1, self.pos_size).to(x.device)], dim=2)
         at = torch.cat([batch_cls, phenos, at], dim=1)
         for block in self.blocks:
             at = block(at)
