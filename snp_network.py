@@ -116,7 +116,7 @@ def mask_sequence(seqs, frac, tokenised_snvs: Tokenised_SNVs):
     random_positions = np.transpose(np.array(random_positions))
     seqs[mask_positions] = mask_tok
     # replace random tokens
-    new_random_toks = torch.tensor(rng.choice([i for i in tokenised_snvs.tok_to_string.keys()], random_positions.shape[1], replace=True), dtype=torch.int32)
+    new_random_toks = torch.tensor(rng.choice([i for i in tokenised_snvs.tok_to_string.keys()], random_positions.shape[1], replace=True), dtype=torch.uint8)
     seqs[random_positions] = new_random_toks
     return seqs
 

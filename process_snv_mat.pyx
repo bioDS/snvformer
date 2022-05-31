@@ -3,6 +3,7 @@ import numpy as np
 import math
 from cython.parallel import prange
 cimport cython
+from tqdm import tqdm
 
 def enc_v3(string_to_tok, tok_to_string, pos, p: int, a0, a1):
     a0_toks = np.zeros(p, dtype=np.int32)
@@ -196,35 +197,44 @@ def get_tok_mat(geno, encoding: int = 2):
     elif (encoding == 3):
         a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok = enc_v3(string_to_tok, tok_to_string, pos, p, a0, a1)
 
-    geno_mat = np.matrix(geno.values, dtype=np.int32)
-    tok_mat = np.zeros((n, p), dtype=np.int32)
+    # geno_mat = np.matrix(geno.values, dtype=np.int32)
+    # we can get away with this because there are very few unique variations
+    tok_mat = np.zeros((n, p), dtype=np.uint8)
 
     # memory views for numpy arrays
     cdef int [:] a0_toks_view = a0_toks
     cdef int [:] a1_toks_view = a1_toks
     cdef int [:] a01_toks_view = a01_toks
-    cdef int [:,:] tok_mat_view = tok_mat
-    cdef int [:,:] geno_mat_view = geno_mat
+    cdef unsigned char [:,:] tok_mat_view = tok_mat
+    # cdef int [:,:] geno_mat_view = geno_mat
 
     print("building token matrix")
 
-    # for ri, row in enumerate(geno_mat):
+    cdef int batch_size = 1024
     cdef Py_ssize_t ri, ind
     cdef int val
-    with nogil:
-        for ri in prange(n):
-            # row = geno_mat[ri,]
-            for ind in range(p):
-                val = geno_mat_view[ri,ind]
-                if val == 0:
-                    tok = a0_toks_view[ind]
-                elif val == 2:
-                    tok = a1_toks_view[ind]
-                elif val == 1:
-                    tok = a01_toks_view[ind]
-                else:
-                    tok = nan_tok
-                tok_mat_view[ri, ind] = tok
+    cdef int [:,:] geno_mat_view
+    cdef int actual_row = 0
+    cdef int batch
+    for batch in tqdm(range(int(np.ceil(float(n)/batch_size)))):
+        geno_mat = np.array(geno[batch*batch_size:(batch+1)*batch_size].values, dtype=np.int32, order='C')
+        geno_mat_view = geno_mat
+        with nogil:
+            for ri in prange(batch):
+                actual_row = batch * batch_size + ri
+                if actual_row < n:
+                    for ind in range(p):
+                        val = geno_mat_view[ri,ind]
+                        if val == 0:
+                            tok = a0_toks_view[ind]
+                        elif val == 2:
+                            tok = a1_toks_view[ind]
+                        elif val == 1:
+                            tok = a01_toks_view[ind]
+                        else:
+                            tok = nan_tok
+                        tok_mat_view[actual_row,ind] = tok
+        
     
     tok_mat = torch.from_numpy(tok_mat)
     return tok_mat, tok_to_string, string_to_tok, len(string_to_tok)
