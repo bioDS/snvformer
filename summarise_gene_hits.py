@@ -5,7 +5,7 @@ import pandas
 
 
 def get_gene_hit_counts(chromosomes, positions, scores):
-    print('summarrising gene hits for {} positions'.format(len(positions)))
+    print('summarising gene hits for {} positions'.format(len(positions)))
 
     data = EnsemblRelease(60) # 60 is an arbitrary choice that happens to use GRCh37
     gene_names = [data.gene_names_at_locus(chrom, loci) for chrom, loci in zip(chromosomes, positions)]
@@ -13,10 +13,12 @@ def get_gene_hit_counts(chromosomes, positions, scores):
     # print(gene_names)
     # print(all_names)
     names, counts = np.unique(all_names, return_counts=True)
+    gene_hits = np.sum(counts)
+    print("{} gene hits ({:.1f}%)".format(gene_hits, 100*gene_hits/len(positions)))
     nc_df = pandas.DataFrame({'name': names, 'count': counts})
     nc_df.sort_values(by='count', inplace=True, ascending=False)
     print("most common gene hits:")
-    print(nc_df[0:10])
+    print(nc_df[0:20])
 
     scores_for_names = {}
     for chrom, loci, score in zip(chromosomes, positions, scores):
@@ -28,9 +30,9 @@ def get_gene_hit_counts(chromosomes, positions, scores):
                 scores_for_names[name] = score
     scores = pandas.DataFrame({'name': scores_for_names.keys(), 'score': scores_for_names.values()})
     scores.sort_values(by="score", inplace=True, ascending=False)
-    print(scores[0:10])
+    print(scores[0:20])
 
-    
+
 
 
 # from a run on all_gwas
