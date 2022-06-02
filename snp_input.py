@@ -13,12 +13,17 @@ from os.path import exists
 import pickle
 import csv
 
-data_dir = os.environ['UKBB_DATA'] + "/"
-# gwas_dir = os.environ['UKBB_DATA'] + "/gwas_associated_only/"
-gwas_dir = os.environ['UKBB_DATA'] + "/"
-plink_base = os.environ['PLINK_FILE']
-pretrain_plink_base = os.environ['PRETRAIN_PLINK_FILE']
-urate_file = os.environ['URATE_FILE']
+# data_dir = os.environ['UKBB_DATA'] + "/"
+# # gwas_dir = os.environ['UKBB_DATA'] + "/gwas_associated_only/"
+# gwas_dir = os.environ['UKBB_DATA'] + "/"
+# plink_base = os.environ['PLINK_FILE']
+# pretrain_plink_base = os.environ['PRETRAIN_PLINK_FILE']
+# urate_file = os.environ['URATE_FILE']
+data_dir = "/data/ukbb/"
+gwas_dir = "/data/ukbb/"
+plink_base = "genotyped_p1e-1"
+pretrain_plink_base = "all_unimputed_combined"
+urate_file = "phenos.csv"
 cache_dir = "./cache/"
 
 test_ids_file   = cache_dir + "test_ids.csv"
