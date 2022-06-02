@@ -5,6 +5,63 @@ from cython.parallel import prange
 cimport cython
 from tqdm import tqdm
 
+def enc_v4(string_to_tok, tok_to_string, pos, p: int, a0, a1):
+    a0_toks = np.zeros(p, dtype=np.int32)
+    a1_toks = np.zeros(p, dtype=np.int32)
+    a01_toks = np.zeros(p, dtype=np.int32)
+    diff_lens= np.zeros(p, dtype=np.int32)
+
+    cdef int a_tok
+    cdef int b_tok
+    cdef int ab_tok
+    cdef int diff_len
+
+    for i,(a,b) in enumerate(zip(a0,a1)):
+        a = str(a)
+        b = str(b)
+        a_len = len(a)
+        b_len = len(b)
+        if (a_len > 1):
+            a = 'seq'
+        if (b_len > 1):
+            b = 'seq'
+        ab_string = a + ',' + b
+
+        a_string = a
+        b_string = b
+
+        # a0
+        if a_string in string_to_tok:
+            a_tok = string_to_tok[a_string]
+        else:
+            a_tok = pos
+            string_to_tok[a_string] = pos
+            tok_to_string[pos] = a_string
+            pos = pos + 1
+        # a1
+        if b_string in string_to_tok:
+            b_tok = string_to_tok[b_string]
+        else:
+            b_tok = pos
+            string_to_tok[b_string] = pos
+            tok_to_string[pos] = b_string
+            pos = pos + 1
+        # a01
+        if ab_string in string_to_tok:
+            ab_tok = string_to_tok[ab_string]
+        else:
+            ab_tok = pos
+            string_to_tok[ab_string] = pos
+            tok_to_string[pos] = ab_string
+            pos = pos + 1
+
+        a01_toks[i] = ab_tok
+        a0_toks[i] = a_tok
+        a1_toks[i] = b_tok
+        diff_lens[i] = b_len - a_len
+
+    return a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok
+
 def enc_v3(string_to_tok, tok_to_string, pos, p: int, a0, a1):
     a0_toks = np.zeros(p, dtype=np.int32)
     a1_toks = np.zeros(p, dtype=np.int32)
@@ -190,21 +247,29 @@ def get_tok_mat(geno, encoding: int = 2):
     pos = len(string_to_tok)
     print("identifying tokens")
 
+    diff_lens = None
+
     if (encoding == 1):
         a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok = enc_v1(string_to_tok, tok_to_string, pos, p, a0, a1)
     elif (encoding == 2):
         a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok = enc_v2(string_to_tok, tok_to_string, pos, p, a0, a1)
     elif (encoding == 3):
         a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok = enc_v3(string_to_tok, tok_to_string, pos, p, a0, a1)
+    elif (encoding == 4):
+        a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok, diff_lens = enc_v4(string_to_tok, tok_to_string, pos, p, a0, a1)
 
     # geno_mat = np.matrix(geno.values, dtype=np.int32)
     # we can get away with this because there are very few unique variations
     tok_mat = np.zeros((n, p), dtype=np.uint8)
+    alleles_differ_mat = np.zeros((n,p), dtype=np.bool_) # N.B. stored as a byte.
+    is_nonref_mat = np.zeros((n,p), dtype=np.bool_) # N.B. stored as a byte.
 
     # memory views for numpy arrays
     cdef int [:] a0_toks_view = a0_toks
     cdef int [:] a1_toks_view = a1_toks
     cdef int [:] a01_toks_view = a01_toks
+    cdef unsigned char [:,:] alleles_differ_mat_view = alleles_differ_mat
+    cdef unsigned char [:,:] is_nonref_mat_view = is_nonref_mat
     cdef unsigned char [:,:] tok_mat_view = tok_mat
     # cdef int [:,:] geno_mat_view = geno_mat
 
@@ -216,6 +281,7 @@ def get_tok_mat(geno, encoding: int = 2):
     cdef int [:,:] geno_mat_view
     cdef int actual_row = 0
     cdef int batch
+    cdef int enc_var = encoding
     for batch in tqdm(range(int(np.ceil(float(n)/batch_size)))):
         geno_mat = np.array(geno[batch*batch_size:(batch+1)*batch_size].values, dtype=np.int32, order='C')
         geno_mat_view = geno_mat
@@ -224,17 +290,37 @@ def get_tok_mat(geno, encoding: int = 2):
                 actual_row = batch * batch_size + ri
                 if actual_row < n:
                     for ind in range(p):
-                        val = geno_mat_view[ri,ind]
-                        if val == 0:
-                            tok = a0_toks_view[ind]
-                        elif val == 2:
-                            tok = a1_toks_view[ind]
-                        elif val == 1:
-                            tok = a01_toks_view[ind]
-                        else:
-                            tok = nan_tok
+                        if (enc_var <= 3):
+                            val = geno_mat_view[ri,ind]
+                            if val == 0:
+                                tok = a0_toks_view[ind]
+                            elif val == 2:
+                                tok = a1_toks_view[ind]
+                            elif val == 1:
+                                tok = a01_toks_view[ind]
+                            else:
+                                tok = nan_tok
+                        elif (enc_var == 4): #TODO: include alleles_differ, is_nonref
+                            val = geno_mat_view[ri,ind]
+                            if val == 0:
+                                tok = a0_toks_view[ind]
+                                is_nonref_mat_view[actual_row, ind] = 0
+                                alleles_differ_mat_view[actual_row, ind] = 0
+                            elif val == 2:
+                                tok = a1_toks_view[ind]
+                                is_nonref_mat_view[actual_row, ind] = 1
+                                alleles_differ_mat_view[actual_row, ind] = 0
+                            elif val == 1:
+                                tok = a01_toks_view[ind]
+                                is_nonref_mat_view[actual_row, ind] = 1
+                                alleles_differ_mat_view[actual_row, ind] = 1
+                            else:
+                                tok = nan_tok
                         tok_mat_view[actual_row,ind] = tok
-        
-    
+
     tok_mat = torch.from_numpy(tok_mat)
-    return tok_mat, tok_to_string, string_to_tok, len(string_to_tok)
+    if (encoding <= 3):
+        return tok_mat, tok_to_string, string_to_tok, len(string_to_tok)
+    elif (encoding == 4):
+        return tok_mat, is_nonref_mat, alleles_differ_mat, diff_lens, tok_to_string, string_to_tok, len(string_to_tok)
+
