@@ -16,8 +16,10 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn import metrics
 
-plink_base = os.environ['PLINK_FILE']
-pretrain_base = os.environ['PRETRAIN_PLINK_FILE']
+from environ import *
+
+# plink_base = os.environ['PLINK_FILE']
+# pretrain_base = os.environ['PRETRAIN_PLINK_FILE']
 
 home_dir = os.environ.get("HOME")
 os.chdir(home_dir + "/work/gout-transformer")
@@ -42,10 +44,11 @@ batch_size = 10
 # net_file = "./saved_nets/genotyped_p1e-1_encv-2_batch-10_epochs-100_p-65803_n-18776_epoch-100_test_split-0.25_output-tok_net.pickle"
 # net_file = "66k_gwas_batch-90_epoch-210_net.pickle"
 # net_file = "66k_gwas_batch-90_epoch-210_net.pickle"
-net_file = "./saved_nets/all_gwas_encv-2_batch-50_epochs-100_p-13290_n-18776_epoch-100_test_split-0.25_output-tok_net.pickle"
+# net_file = "./saved_nets/all_gwas_encv-2_batch-50_epochs-100_p-13290_n-18776_epoch-100_test_split-0.25_output-tok_net.pickle"
 # test_file = "./saved_nets/genotyped_p1e-1_encv-2_batch-10_epochs-100_p-65803_n-18776_epoch-100_test_split-0.25_output-tok_net.pickle_test.pickle"
-test_file = "./saved_nets/all_gwas_encv-2_batch-50_epochs-100_p-13290_n-18776_epoch-100_test_split-0.25_output-tok_net.pickle_test.pickle"
+# test_file = "./saved_nets/all_gwas_encv-2_batch-50_epochs-100_p-13290_n-18776_epoch-100_test_split-0.25_output-tok_net.pickle_test.pickle"
 # test_file = net_file = "_test.pickle"
+net_file = "./saved_nets/genotype_p1e-1_encv-2_batch-10_epochs-10_p-65803_n-18776_epoch-10_test_split-0.25_output-tok_net.pickle"
 #with open(test_file, "rb") as f:
 #    test = pickle.load(f)
 #with open("cache/genotyped_p1e-1_encv-2_X_cache.pickle", "rb") as f:
