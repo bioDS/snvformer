@@ -458,7 +458,7 @@ def main():
     continue_training = False
     train_new_encoder = False
 
-    use_device_ids=[4]
+    use_device_ids = [5]
     device = use_device_ids[0]
     home_dir = os.environ.get("HOME")
     os.chdir(home_dir + "/work/gout-transformer")
@@ -524,7 +524,7 @@ def main():
         pt_log_file.close()
         torch.save(encoder.state_dict(), encoder_file)
     else:
-        encoder = get_pretrained_encoder("wip_pretrained_encoder.net", geno.tok_mat.shape[1], num_phenos, max_seq_pos, pretrain_snv_toks.num_toks, batch_size, device, pretrain_snv_toks.string_to_tok['cls'], use_device_ids)
+        encoder = get_pretrained_encoder("pretrained_encoder_v2.net", geno.tok_mat.shape[1], num_phenos, max_seq_pos, pretrain_snv_toks.num_toks, batch_size, device, pretrain_snv_toks.string_to_tok['cls'], use_device_ids)
 
 
     # Fine-tuning
