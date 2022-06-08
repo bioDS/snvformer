@@ -37,7 +37,7 @@ class Tokenised_SNVs:
         # val == 1 means one of each
         if (encoding <= 3):
             tok_mat, tok_to_string, string_to_tok, num_toks = get_tok_mat(geno, encoding)
-        elif (encoding == 4)
+        elif (encoding == 4):
             tok_mat, is_nonref_mat, alleles_differ_mat, diff_lens, tok_to_string, string_to_tok, num_toks = get_tok_mat(geno, encoding)
             self.is_nonref_mat = torch.tensor(is_nonref_mat, dtype=torch.bool)
             self.alleles_differ_mat = torch.tensor(alleles_differ_mat, dtype=torch.bool)
