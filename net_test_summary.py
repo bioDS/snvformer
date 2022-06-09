@@ -141,19 +141,20 @@ def get_contributions(phenos, pos, tX, tY, net):
     seq_contributions = cls_contributions[num_phenos+1:] / cont_sum
     return pheno_contributions, seq_contributions
 
+# doesn''t work for 66k, not emough memory.
 # relevance test
-a, b, c, d = test[4500]
-pheno_contributions, seq_contributions = get_contributions(a, b, c, d, net)
-with open("last_seq_contributions.pickle", "wb") as f:
-    pickle.dump((pheno_contributions, seq_contributions), f)
-for ind in range(4501,4550):
-   a, b, c, d = test[ind]
-   ph, se = get_contributions(a, b, c, d, net)
-   pheno_contributions = pheno_contributions + ph
-   seq_contributions = seq_contributions + se
-
-with open("last_seq_contributions_bundle.pickle", "wb") as f:
-    pickle.dump((pheno_contributions, seq_contributions), f)
+# a, b, c, d = test[4500]
+# pheno_contributions, seq_contributions = get_contributions(a, b, c, d, net)
+# with open("last_seq_contributions.pickle", "wb") as f:
+#     pickle.dump((pheno_contributions, seq_contributions), f)
+# for ind in range(4501,4550):
+#    a, b, c, d = test[ind]
+#    ph, se = get_contributions(a, b, c, d, net)
+#    pheno_contributions = pheno_contributions + ph
+#    seq_contributions = seq_contributions + se
+# 
+# with open("last_seq_contributions_bundle.pickle", "wb") as f:
+#     pickle.dump((pheno_contributions, seq_contributions), f)
 
 # check binary accuracy on test set:
 actual_vals = []
