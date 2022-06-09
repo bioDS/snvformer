@@ -18,6 +18,7 @@ plink_base = "genotype_p1e-1"
 pretrain_base = "all_unimputed_combined"
 cache_dir = "./cache/"
 
+
 class simple_mlp(nn.Module):
     def __init__(self, in_size, num_hiddens, depth, vocab_size, embed_dim, max_seq_pos, device) -> None:
         super().__init__()
@@ -155,8 +156,8 @@ def pretrain_encoder(
         num_steps = 0
         for pos, seqs in tqdm(training_iter, ncols=0):
             #TODO: take this out
-            if (num_steps > 2):
-                break
+            # if (num_steps > 2):
+            #     break
             phenos = torch.zeros(seqs.shape[0], encoder.module.num_phenos)
             # take a subset of SNVs the size of the encoder input
             input_size = encoder.module.seq_len
@@ -201,6 +202,19 @@ def pretrain_encoder(
         print(s)
         pretrain_log_file.write(s)
 
+
+def subsample_forward(net, seqs, pos, phenos, device):
+    rng = np.random.default_rng()
+    input_size = net.module.encoder.seq_len
+    chosen_positions = rng.choice(seqs.shape[1], input_size, replace=False)
+    seqs = seqs[:, chosen_positions]
+    pos = pos[:, chosen_positions]
+    phenos = phenos.to(device)
+    seq= seqs.to(device)
+    pos = pos.to(device)
+    return net(phenos, masked_seqs, pos)
+
+
 def train_net(
     net, training_dataset, test_dataset, batch_size, num_epochs,
     device, learning_rate, prev_num_epochs, test_split, train_log_file
@@ -219,7 +233,8 @@ def train_net(
             X = X.to(device)
             y = y.to(device)
             pos = pos.to(device)
-            Yh = net(phenos, X, pos)  # two-value softmax (binary classification)
+            # Yh = net(phenos, X, pos)  # two-value softmax (binary classification)
+            Yh = subsample_forward(net, seqs, pos, phenos, device)
             l = loss(Yh, y)
             trainer.zero_grad()
             l.mean().backward()
@@ -232,7 +247,8 @@ def train_net(
                     X = X.to(device)
                     y = y.to(device)
                     pos = pos.to(device)
-                    Yh = net(phenos, X, pos)  # two-value softmax (binary classification)
+                    # Yh = net(phenos, X, pos)  # two-value softmax (binary classification)
+                    Yh = subsample_forward(net, seqs, pos, phenos, device)
                     l = loss(Yh, y)
                     test_loss += l.mean()
             tmpstr = "epoch {}, mean loss {:.3}, {:.3} (test)".format(
@@ -245,7 +261,7 @@ def train_net(
                 tY = tY.to(device).unsqueeze(0)
                 pos = pos.to(device).unsqueeze(0)
                 phenos = phenos.to(device).unsqueeze(0)
-                tYh = net(phenos, tX, pos)
+                tYh = subsample_forward(net, seqs, pos, phenos, device)
                 tzip = zip(tYh, tY)
                 for a, b in tzip:
                     print("{:.3f}, \t {}".format(a[1].item(), b.item()))
@@ -261,7 +277,7 @@ def train_net(
         tY = tY.to(device).unsqueeze(0)
         pos = pos.to(device).unsqueeze(0)
         phenos = phenos.to(device).unsqueeze(0)
-        tYh = net(phenos, tX, pos)
+        tYh = subsample_forward(net, seqs, pos, phenos, device)
         tzip = zip(tYh, tY)
         for a, b in tzip:
             print("{:.3f}, \t {}".format(a[1].item(), b.item()))
@@ -272,7 +288,7 @@ def train_net(
         tY = tY.to(device).unsqueeze(0)
         pos = pos.to(device).unsqueeze(0)
         phenos = phenos.to(device).unsqueeze(0)
-        tYh = net(phenos, tX, pos)
+        tYh = subsample_forward(net, seqs, pos, phenos, device)
         tzip = zip(tYh, tY)
         for a, b in tzip:
             print("{:.3f}, \t {}".format(a[1].item(), b.item()))
@@ -288,7 +304,7 @@ def train_net(
             phenos = phenos.to(device)
             tX = tX.to(device)
             tY = tY.to(device)
-            tYh = net(phenos, tX, pos)
+            tYh = subsample_forward(net, seqs, pos, phenos, device)
             binary_tYh = tYh[:, 1] > 0.5
             binary_tY = tY > 0.5
             binary_tY = binary_tY.to(device)
@@ -306,7 +322,7 @@ def train_net(
             tY = tY.to(device)
             pos = pos.to(device)
             phenos = phenos.to(device)
-            tYh = net(phenos, tX, pos)
+            tYh = subsample_forward(net, seqs, pos, phenos, device)
             binary_tYh = tYh[:, 1] > 0.5
             binary_tY = tY > 0.5
             binary_tY = binary_tY.to(device)
@@ -455,10 +471,10 @@ def main():
     # device = "cuda" if torch.cuda.is_available() else "cpu"
     # if (torch.cuda.device_count() > 1):
     #     device = torch.device('cuda:1')
-    continue_training = False
-    train_new_encoder = False
+    continue_training = True
+    train_new_encoder = True
 
-    use_device_ids = [5]
+    use_device_ids = [4]
     device = use_device_ids[0]
     home_dir = os.environ.get("HOME")
     os.chdir(home_dir + "/work/gout-transformer")
@@ -468,7 +484,7 @@ def main():
     # test_split = 0.05 #TODO: just for testing
     train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(2, test_frac, verify_frac)
 
-    batch_size = 10
+    batch_size = 5
     num_epochs = 10
     lr = 1e-7
     output = "tok"
@@ -506,10 +522,12 @@ def main():
 
     num_phenos = 3
     # net = get_transformer(geno.tok_mat.shape[1], num_phenos, max_seq_pos, geno.num_toks, batch_size, device, output)
-    encoder_file = "pretrained_encoder.net"
-    print("creating encoder w/ input size: {}".format(geno.tok_mat.shape[1]))
+    encoder_file = "wip_pretrained_encoder.net"
+    # encoder_size = geno.tok_mat.shape[1] # the natural size for this input
+    encoder_size = 16384
+    print("creating encoder w/ input size: {}".format(encoder_size))
     if (train_new_encoder):
-        encoder = get_encoder(geno.tok_mat.shape[1], num_phenos, max_seq_pos, pretrain_snv_toks.num_toks, batch_size, device, pretrain_snv_toks.string_to_tok['cls'])
+        encoder = get_encoder(encoder_size, num_phenos, max_seq_pos, pretrain_snv_toks.num_toks, batch_size, device, pretrain_snv_toks.string_to_tok['cls'])
         encoder = encoder.cuda(device)
         encoder = nn.DataParallel(encoder, use_device_ids)
 
@@ -532,8 +550,8 @@ def main():
 
     net = nn.DataParallel(net, use_device_ids)
     if (continue_training):
-        prev_epoch = 200
-        prev_batch_size = 60
+        prev_epoch = 10
+        prev_batch_size = 10
         prev_net_name = net_dir + "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_test_split-{}_output-{}_net.pickle".format(
             plink_base, str(enc_ver), prev_batch_size, prev_epoch, geno.tok_mat.shape[1], geno.tok_mat.shape[0], prev_epoch, test_frac, output
     )
