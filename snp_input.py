@@ -12,6 +12,7 @@ import math
 from os.path import exists
 import pickle
 import csv
+from environ import *
 
 # data_dir = os.environ['UKBB_DATA'] + "/"
 # # gwas_dir = os.environ['UKBB_DATA'] + "/gwas_associated_only/"
@@ -19,11 +20,10 @@ import csv
 # plink_base = os.environ['PLINK_FILE']
 # pretrain_plink_base = os.environ['PRETRAIN_PLINK_FILE']
 # urate_file = os.environ['URATE_FILE']
-data_dir = "/data/ukbb/"
-gwas_dir = "/data/ukbb/"
-plink_base = "genotyped_p1e-1"
-pretrain_plink_base = "all_unimputed_combined"
-urate_file = "phenos.csv"
+data_dir = ukbb_data
+gwas_dir = ukbb_data
+pretrain_plink_base = pretrain_base
+urate_file = pheno_file
 cache_dir = "./cache/"
 
 test_ids_file   = cache_dir + "test_ids.csv"
@@ -51,7 +51,7 @@ class Tokenised_SNVs:
         self.num_toks = num_toks
         self.positions = torch.tensor(geno.pos.values, dtype=torch.long)
 
-def read_from_plink(remove_nan=False, subsample_control=True, encoding: int = 2, test_frac=0.3, verify_frac=0.05):
+def read_from_plink(remove_nan=False, subsample_control=True, encoding: int = 2, test_frac=0.3, verify_frac=0.05, summarise_genos=False):
     print("using data from:", data_dir)
     bed_file = gwas_dir+plink_base+".bed"
     bim_file = gwas_dir+plink_base+".bim"
@@ -62,6 +62,7 @@ def read_from_plink(remove_nan=False, subsample_control=True, encoding: int = 2,
     urate_tmp = pandas.read_csv(data_dir + urate_file)
     withdrawn_ids = pandas.read_csv(data_dir + "w12611_20220222.csv", header=None, names=["ids"])
 
+    print("removing withdrawn ids")
     usable_ids = list(set(urate_tmp.eid) - set(withdrawn_ids.ids))
     phenos = urate_tmp[urate_tmp["eid"].isin(usable_ids)]
     del urate_tmp
@@ -69,36 +70,39 @@ def read_from_plink(remove_nan=False, subsample_control=True, encoding: int = 2,
     geno = geno_tmp[geno_tmp["sample"].isin(usable_ids)]
     del geno_tmp
 
+    print("getting train/test/verify split")
     train_ids, test_ids, verify_ids = get_train_test_verify_ids(phenos, test_frac, verify_frac)
 
     if (subsample_control):
+        print("reducing to even control/non-control split")
         sample_ids = np.concatenate([train_ids, test_ids, verify_ids]).reshape(-1)
         phenos = phenos[phenos["eid"].isin(sample_ids)]
         geno = geno[geno["sample"].isin(sample_ids)]
 
     train_phenos = phenos[["age", "sex", "bmi"]]
 
-    geno_mat = geno.values
+    if summarise_genos:
+        geno_mat = geno.values
 
-    num_zeros = np.sum(geno_mat == 0)
-    num_ones = np.sum(geno_mat == 1)
-    num_twos = np.sum(geno_mat == 2)
-    num_non_zeros = np.sum(geno_mat != 0)
-    num_nan = np.sum(np.isnan(geno_mat))
-    total_num = num_zeros + num_non_zeros
-    # geno_med = np.bincount(geno_mat)
-    values, counts = np.unique(geno_mat, return_counts=True)
-    most_common = values[np.argmax(counts)]
+        num_zeros = np.sum(geno_mat == 0)
+        num_ones = np.sum(geno_mat == 1)
+        num_twos = np.sum(geno_mat == 2)
+        num_non_zeros = np.sum(geno_mat != 0)
+        num_nan = np.sum(np.isnan(geno_mat))
+        total_num = num_zeros + num_non_zeros
+        # geno_med = np.bincount(geno_mat)
+        values, counts = np.unique(geno_mat, return_counts=True)
+        most_common = values[np.argmax(counts)]
 
-    print(
-        "geno mat contains {:.2f}% zeros, {:.2f}% ones, {:.2f}% twos {:.2f}% nans".format(
-            100.0 * num_zeros / total_num,
-            100 * (num_ones / total_num),
-            100 * (num_twos / total_num),
-            100.0 * num_nan / total_num,
+        print(
+            "geno mat contains {:.2f}% zeros, {:.2f}% ones, {:.2f}% twos {:.2f}% nans".format(
+                100.0 * num_zeros / total_num,
+                100 * (num_ones / total_num),
+                100 * (num_twos / total_num),
+                100.0 * num_nan / total_num,
+            )
         )
-    )
-    print("{:.2f}% has gout".format(100 * np.sum(phenos.gout) / len(phenos)))
+        print("{:.2f}% has gout".format(100 * np.sum(phenos.gout) / len(phenos)))
 
     if remove_nan:
         geno_mat[np.isnan(geno_mat)] = most_common
@@ -255,8 +259,36 @@ def get_data(enc_ver, test_split, verify_split=0.05):
 
 if __name__ == "__main__":
     # snv_toks, urate = read_from_plink(encoding=2)
-    test_split = 0.25
-    verify_split = 0.05
-    train_ids, train, test_ids, test, verify_ids, verify, X, Y, enc_ver = get_data(2, test_split, verify_split)
-    train_ids, test_ids, verify_ids = get_train_test_verify_ids(Y, test_split, verify_split)
-    get_pretrain_dataset(train_ids)
+    # test_split = 0.25
+    # verify_split = 0.05
+    # train_ids, train, test_ids, test, verify_ids, verify, X, Y, enc_ver = get_data(2, test_split, verify_split)
+    # train_ids, test_ids, verify_ids = get_train_test_verify_ids(Y, test_split, verify_split)
+    # get_pretrain_dataset(train_ids)
+
+    # debugging get_tok_mat
+    enc_ver = 2
+    test_frac = 0.25
+    verify_frac = 0.05
+    geno_tmp = read_plink1_bin("/data/ukbb/all_gwas.bed")
+    geno_tmp["sample"] = pandas.to_numeric(geno_tmp["sample"])
+    urate_tmp = pandas.read_csv(data_dir + urate_file)
+    withdrawn_ids = pandas.read_csv(data_dir + "w12611_20220222.csv", header=None, names=["ids"])
+
+    print("removing withdrawn ids")
+    usable_ids = list(set(urate_tmp.eid) - set(withdrawn_ids.ids))
+    phenos = urate_tmp[urate_tmp["eid"].isin(usable_ids)]
+    del urate_tmp
+    # avail_phenos = urate
+    geno = geno_tmp[geno_tmp["sample"].isin(usable_ids)]
+    del geno_tmp
+
+    print("getting train/test/verify split")
+    train_ids, test_ids, verify_ids = get_train_test_verify_ids(phenos, test_frac, verify_frac)
+
+    print("reducing to even control/non-control split")
+    sample_ids = np.concatenate([train_ids, test_ids, verify_ids]).reshape(-1)
+    phenos = phenos[phenos["eid"].isin(sample_ids)]
+    geno = geno[geno["sample"].isin(sample_ids)]
+
+    geno = geno[0:10, 0:10]
+    snv_toks = Tokenised_SNVs(geno, enc_ver)

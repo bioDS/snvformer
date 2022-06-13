@@ -11,11 +11,8 @@ import os
 from snp_input import *
 from self_attention_net import *
 from tqdm import tqdm
+from environ import *
 
-# plink_base = os.environ['PLINK_FILE']
-# pretrain_base = os.environ['PRETRAIN_PLINK_FILE']
-plink_base = "genotype_p1e-1"
-pretrain_base = "all_unimputed_combined"
 cache_dir = "./cache/"
 
 
