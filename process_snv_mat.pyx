@@ -230,7 +230,7 @@ def get_tok_mat(geno, encoding: int = 2):
     encoded_tok_list = []
     string_to_tok = {}
     tok_to_string = {}
-    (n_tmp,p_tmp) = geno.shape
+    (n_tmp, p_tmp) = geno.shape
     cdef int n = n_tmp
     cdef int p = p_tmp
     cdef int pos = 0
@@ -241,8 +241,7 @@ def get_tok_mat(geno, encoding: int = 2):
         pos = pos + 1
     cdef int nan_tok = string_to_tok['nan']
 
-
-    cdef int tok
+    cdef unsigned char tok
 
     pos = len(string_to_tok)
     print("identifying tokens")
@@ -273,7 +272,7 @@ def get_tok_mat(geno, encoding: int = 2):
     cdef unsigned char [:,:] tok_mat_view = tok_mat
     # cdef int [:,:] geno_mat_view = geno_mat
 
-    print("building token matrix")
+    print("building token matrix v-{}".format(encoding))
 
     cdef int batch_size = 1024
     cdef Py_ssize_t ri, ind
@@ -282,16 +281,18 @@ def get_tok_mat(geno, encoding: int = 2):
     cdef int actual_row = 0
     cdef int batch
     cdef int enc_var = encoding
+    cdef int actual_batch_len
     for batch in tqdm(range(int(np.ceil(float(n)/batch_size)))):
-        geno_mat = np.array(geno[batch*batch_size:(batch+1)*batch_size].values, dtype=np.int32, order='C')
+        geno_mat = np.array(geno[batch*batch_size:(batch+1)*batch_size].values, dtype=np.int32)
         geno_mat_view = geno_mat
+        actual_batch_len = geno_mat.shape[0]
         with nogil:
-            for ri in prange(batch):
+            for ri in prange(actual_batch_len):
                 actual_row = batch * batch_size + ri
                 if actual_row < n:
                     for ind in range(p):
                         if (enc_var <= 3):
-                            val = geno_mat_view[ri,ind]
+                            val = geno_mat_view[ri, ind]
                             if val == 0:
                                 tok = a0_toks_view[ind]
                             elif val == 2:
@@ -300,8 +301,8 @@ def get_tok_mat(geno, encoding: int = 2):
                                 tok = a01_toks_view[ind]
                             else:
                                 tok = nan_tok
-                        elif (enc_var == 4): #TODO: include alleles_differ, is_nonref
-                            val = geno_mat_view[ri,ind]
+                        elif (enc_var == 4):  # TODO: include alleles_differ, is_nonref
+                            val = geno_mat_view[ri, ind]
                             if val == 0:
                                 tok = a0_toks_view[ind]
                                 is_nonref_mat_view[actual_row, ind] = 0
@@ -316,7 +317,7 @@ def get_tok_mat(geno, encoding: int = 2):
                                 alleles_differ_mat_view[actual_row, ind] = 1
                             else:
                                 tok = nan_tok
-                        tok_mat_view[actual_row,ind] = tok
+                        tok_mat_view[actual_row, ind] = tok
 
     tok_mat = torch.from_numpy(tok_mat)
     if (encoding <= 3):
