@@ -290,5 +290,4 @@ if __name__ == "__main__":
     phenos = phenos[phenos["eid"].isin(sample_ids)]
     geno = geno[geno["sample"].isin(sample_ids)]
 
-    geno = geno[0:10, 0:10]
     snv_toks = Tokenised_SNVs(geno, enc_ver)
