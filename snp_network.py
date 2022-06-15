@@ -200,16 +200,16 @@ def pretrain_encoder(
         pretrain_log_file.write(s)
 
 
-def subsample_forward(net, seqs, pos, phenos, device):
+def subsample_forward(net: nn.DataParallel, seqs, pos, phenos, device):
     rng = np.random.default_rng()
     input_size = net.module.encoder.seq_len
     chosen_positions = rng.choice(seqs.shape[1], input_size, replace=False)
     seqs = seqs[:, chosen_positions]
     pos = pos[:, chosen_positions]
     phenos = phenos.to(device)
-    seq= seqs.to(device)
+    seqs = seqs.to(device)
     pos = pos.to(device)
-    return net(phenos, masked_seqs, pos)
+    return net(phenos, seqs, pos)
 
 
 def train_net(
@@ -231,7 +231,7 @@ def train_net(
             y = y.to(device)
             pos = pos.to(device)
             # Yh = net(phenos, X, pos)  # two-value softmax (binary classification)
-            Yh = subsample_forward(net, seqs, pos, phenos, device)
+            Yh = subsample_forward(net, X, pos, phenos, device)
             l = loss(Yh, y)
             trainer.zero_grad()
             l.mean().backward()
@@ -245,7 +245,7 @@ def train_net(
                     y = y.to(device)
                     pos = pos.to(device)
                     # Yh = net(phenos, X, pos)  # two-value softmax (binary classification)
-                    Yh = subsample_forward(net, seqs, pos, phenos, device)
+                    Yh = subsample_forward(net, X, pos, phenos, device)
                     l = loss(Yh, y)
                     test_loss += l.mean()
             tmpstr = "epoch {}, mean loss {:.3}, {:.3} (test)".format(
@@ -258,7 +258,7 @@ def train_net(
                 tY = tY.to(device).unsqueeze(0)
                 pos = pos.to(device).unsqueeze(0)
                 phenos = phenos.to(device).unsqueeze(0)
-                tYh = subsample_forward(net, seqs, pos, phenos, device)
+                tYh = subsample_forward(net, tX, pos, phenos, device)
                 tzip = zip(tYh, tY)
                 for a, b in tzip:
                     print("{:.3f}, \t {}".format(a[1].item(), b.item()))
@@ -274,7 +274,7 @@ def train_net(
         tY = tY.to(device).unsqueeze(0)
         pos = pos.to(device).unsqueeze(0)
         phenos = phenos.to(device).unsqueeze(0)
-        tYh = subsample_forward(net, seqs, pos, phenos, device)
+        tYh = subsample_forward(net, tX, pos, phenos, device)
         tzip = zip(tYh, tY)
         for a, b in tzip:
             print("{:.3f}, \t {}".format(a[1].item(), b.item()))
@@ -285,7 +285,7 @@ def train_net(
         tY = tY.to(device).unsqueeze(0)
         pos = pos.to(device).unsqueeze(0)
         phenos = phenos.to(device).unsqueeze(0)
-        tYh = subsample_forward(net, seqs, pos, phenos, device)
+        tYh = subsample_forward(net, tX, pos, phenos, device)
         tzip = zip(tYh, tY)
         for a, b in tzip:
             print("{:.3f}, \t {}".format(a[1].item(), b.item()))
@@ -301,7 +301,7 @@ def train_net(
             phenos = phenos.to(device)
             tX = tX.to(device)
             tY = tY.to(device)
-            tYh = subsample_forward(net, seqs, pos, phenos, device)
+            tYh = subsample_forward(net, tX, pos, phenos, device)
             binary_tYh = tYh[:, 1] > 0.5
             binary_tY = tY > 0.5
             binary_tY = binary_tY.to(device)
@@ -319,7 +319,7 @@ def train_net(
             tY = tY.to(device)
             pos = pos.to(device)
             phenos = phenos.to(device)
-            tYh = subsample_forward(net, seqs, pos, phenos, device)
+            tYh = subsample_forward(net, tX, pos, phenos, device)
             binary_tYh = tYh[:, 1] > 0.5
             binary_tY = tY > 0.5
             binary_tY = binary_tY.to(device)
@@ -468,9 +468,6 @@ def main():
     # device = "cuda" if torch.cuda.is_available() else "cpu"
     # if (torch.cuda.device_count() > 1):
     #     device = torch.device('cuda:1')
-    continue_training = True
-    train_new_encoder = True
-
     use_device_ids = [4]
     device = use_device_ids[0]
     home_dir = os.environ.get("HOME")
@@ -519,18 +516,20 @@ def main():
 
     num_phenos = 3
     # net = get_transformer(geno.tok_mat.shape[1], num_phenos, max_seq_pos, geno.num_toks, batch_size, device, output)
-    encoder_file = "wip_pretrained_encoder.net"
+    # encoder_file = "pretrained_encoder_v2_17_epochs.net"
     # encoder_size = geno.tok_mat.shape[1] # the natural size for this input
-    encoder_size = 16384
+    encoder_size = 65536
     print("creating encoder w/ input size: {}".format(encoder_size))
     if (train_new_encoder):
+        pt_batch_size = batch_size
+        pt_lr = 1e-7
+        pt_epochs = 10
+        encoder_file = "pretrained_encoder_encv-{}_insize-{}_run_epochs-{}.net".format(
+            enc_ver, encoder_size, pt_epochs)
         encoder = get_encoder(encoder_size, num_phenos, max_seq_pos, pretrain_snv_toks.num_toks, batch_size, device, pretrain_snv_toks.string_to_tok['cls'])
         encoder = encoder.cuda(device)
         encoder = nn.DataParallel(encoder, use_device_ids)
 
-        pt_batch_size = batch_size
-        pt_epochs = 50
-        pt_lr = 1e-7
         pt_net_name = "bs-{}_epochs-{}_lr-{}_pretrained.net".format(pt_batch_size, pt_epochs, pt_lr)
         pt_log_file = open(pt_net_name + ".log", "w")
         print("pre-training encoder with sequences of length {}".format(pretrain_snv_toks.tok_mat.shape[1]))
@@ -539,23 +538,23 @@ def main():
         pt_log_file.close()
         torch.save(encoder.state_dict(), encoder_file)
     else:
-        encoder = get_pretrained_encoder("pretrained_encoder_v2.net", geno.tok_mat.shape[1], num_phenos, max_seq_pos, pretrain_snv_toks.num_toks, batch_size, device, pretrain_snv_toks.string_to_tok['cls'], use_device_ids)
+        encoder = get_pretrained_encoder("pretrained_encoder_v2_17_epochs.net", encoder_size, num_phenos, max_seq_pos, pretrain_snv_toks.num_toks, batch_size, device, pretrain_snv_toks.string_to_tok['cls'], use_device_ids)
 
 
     # Fine-tuning
-    net = transformer_from_encoder(encoder.module, geno.tok_mat.shape[1], num_phenos, output)
+    net = transformer_from_encoder(encoder.module, encoder_size, num_phenos, output)
 
     net = nn.DataParallel(net, use_device_ids)
     if (continue_training):
         prev_epoch = 10
         prev_batch_size = 10
         prev_net_name = net_dir + "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_test_split-{}_output-{}_net.pickle".format(
-            plink_base, str(enc_ver), prev_batch_size, prev_epoch, geno.tok_mat.shape[1], geno.tok_mat.shape[0], prev_epoch, test_frac, output
+            plink_base, str(enc_ver), prev_batch_size, prev_epoch, encoder_size, geno.tok_mat.shape[0], prev_epoch, test_frac, output
     )
         net.load_state_dict(torch.load(prev_net_name))
         new_epoch = prev_epoch + num_epochs
         new_net_name = net_dir + "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_output-{}_net.pickle".format(
-            plink_base, str(enc_ver), batch_size, num_epochs, geno.tok_mat.shape[1], geno.tok_mat.shape[0], new_epoch, output
+            plink_base, str(enc_ver), batch_size, num_epochs, encoder_size, geno.tok_mat.shape[0], new_epoch, output
         )
     else:
         prev_epoch = 0
