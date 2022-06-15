@@ -2,8 +2,19 @@ import torch
 import numpy as np
 import math
 from cython.parallel import prange
-cimport cython
 from tqdm import tqdm
+cimport cython
+
+
+# Just directly uses the snp major/minor 0/1/2 situation.
+def enc_v5(string_to_tok, tok_to_string, pos, p: int, a0, a1):
+    a0_toks = np.repeat(0, len(a0))
+    a01_toks = np.repeat(1, len(a0))
+    a1_toks = np.repeat(2, len(a0))
+    for n in [0, 1, 2]:
+        tok_to_string[n] = str(n)
+        string_to_tok[str(n)] = n
+    return a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok
 
 def enc_v4(string_to_tok, tok_to_string, pos, p: int, a0, a1):
     a0_toks = np.zeros(p, dtype=np.int32)
@@ -62,6 +73,7 @@ def enc_v4(string_to_tok, tok_to_string, pos, p: int, a0, a1):
 
     return a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok
 
+
 def enc_v3(string_to_tok, tok_to_string, pos, p: int, a0, a1):
     a0_toks = np.zeros(p, dtype=np.int32)
     a1_toks = np.zeros(p, dtype=np.int32)
@@ -118,6 +130,7 @@ def enc_v3(string_to_tok, tok_to_string, pos, p: int, a0, a1):
         a1_toks[i] = b_tok
 
     return a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok
+
 
 # >1 seqs become "XI"
 # minor alleles shorter become 'del'
@@ -256,6 +269,8 @@ def get_tok_mat(geno, encoding: int = 2):
         a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok = enc_v3(string_to_tok, tok_to_string, pos, p, a0, a1)
     elif (encoding == 4):
         a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok, diff_lens = enc_v4(string_to_tok, tok_to_string, pos, p, a0, a1)
+    elif (encoding == 5):
+        a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok = enc_v5(string_to_tok, tok_to_string, pos, p, a0, a1)
 
     # geno_mat = np.matrix(geno.values, dtype=np.int32)
     # we can get away with this because there are very few unique variations
@@ -291,17 +306,7 @@ def get_tok_mat(geno, encoding: int = 2):
                 actual_row = batch * batch_size + ri
                 if actual_row < n:
                     for ind in range(p):
-                        if (enc_var <= 3):
-                            val = geno_mat_view[ri, ind]
-                            if val == 0:
-                                tok = a0_toks_view[ind]
-                            elif val == 2:
-                                tok = a1_toks_view[ind]
-                            elif val == 1:
-                                tok = a01_toks_view[ind]
-                            else:
-                                tok = nan_tok
-                        elif (enc_var == 4):  # TODO: include alleles_differ, is_nonref
+                        if (enc_var == 4):
                             val = geno_mat_view[ri, ind]
                             if val == 0:
                                 tok = a0_toks_view[ind]
@@ -315,6 +320,16 @@ def get_tok_mat(geno, encoding: int = 2):
                                 tok = a01_toks_view[ind]
                                 is_nonref_mat_view[actual_row, ind] = 1
                                 alleles_differ_mat_view[actual_row, ind] = 1
+                            else:
+                                tok = nan_tok
+                        else:
+                            val = geno_mat_view[ri, ind]
+                            if val == 0:
+                                tok = a0_toks_view[ind]
+                            elif val == 2:
+                                tok = a1_toks_view[ind]
+                            elif val == 1:
+                                tok = a01_toks_view[ind]
                             else:
                                 tok = nan_tok
                         tok_mat_view[actual_row, ind] = tok
