@@ -128,7 +128,7 @@ def mask_sequence(seqs, frac, tokenised_snvs: Tokenised_SNVs):
     return seqs
 
 def pretrain_encoder(
-    encoder: nn.DataParallel(Encoder), pretrain_snv_toks, batch_size, num_epochs,
+    encoder, pretrain_snv_toks, batch_size, num_epochs,
     device, learning_rate, pretrain_log_file):
 
     print("beginning pre-training encoder")
@@ -191,8 +191,8 @@ def pretrain_encoder(
             #     break
 
 
-        encoder_file = "net_epochs/pretrain_{}_epoch-{}_encoder.pickle".format(
-            pretrain_base, e
+        encoder_file = "net_epochs/pretrain_{}_epoch-{}_encoder_encsize-{}.pickle".format(
+            pretrain_base, e, encoder.module.seq_len
         )
         torch.save(encoder.state_dict(), encoder_file)
         s = "epoch {}, loss {}".format(e, sum_loss/num_steps)
@@ -468,7 +468,6 @@ def main():
     # device = "cuda" if torch.cuda.is_available() else "cpu"
     # if (torch.cuda.device_count() > 1):
     #     device = torch.device('cuda:1')
-    use_device_ids = [4]
     device = use_device_ids[0]
     home_dir = os.environ.get("HOME")
     os.chdir(home_dir + "/work/gout-transformer")
@@ -476,7 +475,7 @@ def main():
     test_frac = 0.25
     verify_frac = 0.05
     # test_split = 0.05 #TODO: just for testing
-    train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(2, test_frac, verify_frac)
+    train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(5, test_frac, verify_frac)
 
     batch_size = 5
     num_epochs = 10
