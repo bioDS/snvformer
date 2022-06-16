@@ -159,6 +159,7 @@ def pretrain_encoder(
             # take a subset of SNVs the size of the encoder input
             input_size = encoder.module.seq_len
             chosen_positions = rng.choice(seqs.shape[1], input_size, replace=False)
+            chosen_positions.sort()
             seqs = seqs[:,chosen_positions]
             pos = pos[:,chosen_positions]
             # randomly mask SNVs (but not their positions)
@@ -204,6 +205,7 @@ def subsample_forward(net: nn.DataParallel, seqs, pos, phenos, device):
     rng = np.random.default_rng()
     input_size = net.module.encoder.seq_len
     chosen_positions = rng.choice(seqs.shape[1], input_size, replace=False)
+    chosen_positions.sort()
     seqs = seqs[:, chosen_positions]
     pos = pos[:, chosen_positions]
     phenos = phenos.to(device)
@@ -248,7 +250,7 @@ def train_net(
                     Yh = subsample_forward(net, X, pos, phenos, device)
                     l = loss(Yh, y)
                     test_loss += l.mean()
-            tmpstr = "epoch {}, mean loss {:.3}, {:.3} (test)".format(
+            tmpstr = "epoch {}, mean loss {:.5}, {:.5} (test)".format(
                     e, sum_loss / len(training_iter), test_loss / len(test_iter))
             print(tmpstr)
             train_log_file.write(tmpstr)
@@ -475,7 +477,7 @@ def main():
     test_frac = 0.25
     verify_frac = 0.05
     # test_split = 0.05 #TODO: just for testing
-    train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(5, test_frac, verify_frac)
+    train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(encoding_version, test_frac, verify_frac)
 
     batch_size = 5
     num_epochs = 10
@@ -519,12 +521,12 @@ def main():
     # encoder_size = geno.tok_mat.shape[1] # the natural size for this input
     encoder_size = 65536
     print("creating encoder w/ input size: {}".format(encoder_size))
+    pt_epochs = 10
+    encoder_file = "pretrained_encoder_encv-{}_insize-{}_run_epochs-{}.net".format(
+        enc_ver, encoder_size, pt_epochs)
     if (train_new_encoder):
         pt_batch_size = batch_size
         pt_lr = 1e-7
-        pt_epochs = 10
-        encoder_file = "pretrained_encoder_encv-{}_insize-{}_run_epochs-{}.net".format(
-            enc_ver, encoder_size, pt_epochs)
         encoder = get_encoder(encoder_size, num_phenos, max_seq_pos, pretrain_snv_toks.num_toks, batch_size, device, pretrain_snv_toks.string_to_tok['cls'])
         encoder = encoder.cuda(device)
         encoder = nn.DataParallel(encoder, use_device_ids)
@@ -537,7 +539,7 @@ def main():
         pt_log_file.close()
         torch.save(encoder.state_dict(), encoder_file)
     else:
-        encoder = get_pretrained_encoder("pretrained_encoder_v2_17_epochs.net", encoder_size, num_phenos, max_seq_pos, pretrain_snv_toks.num_toks, batch_size, device, pretrain_snv_toks.string_to_tok['cls'], use_device_ids)
+        encoder = get_pretrained_encoder(encoder_file, encoder_size, num_phenos, max_seq_pos, pretrain_snv_toks.num_toks, batch_size, device, pretrain_snv_toks.string_to_tok['cls'], use_device_ids)
 
 
     # Fine-tuning
