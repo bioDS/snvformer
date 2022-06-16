@@ -35,7 +35,7 @@ class Tokenised_SNVs:
         # val == 0 means we have two 'a0' vals
         # val == 2 means two 'a1' vals
         # val == 1 means one of each
-        if (encoding <= 3):
+        if (encoding != 4):
             tok_mat, tok_to_string, string_to_tok, num_toks = get_tok_mat(geno, encoding)
         elif (encoding == 4):
             tok_mat, is_nonref_mat, alleles_differ_mat, diff_lens, tok_to_string, string_to_tok, num_toks = get_tok_mat(geno, encoding)
@@ -345,10 +345,10 @@ if __name__ == "__main__":
     # get_pretrain_dataset(train_ids)
 
     # debugging get_tok_mat
-    enc_ver = 2
+    enc_ver = 5
     test_frac = 0.25
     verify_frac = 0.05
-    geno_tmp = read_plink1_bin("/data/ukbb/all_gwas.bed")
+    geno_tmp = read_plink1_bin(ukbb_data + "/all_gwas.bed")
     geno_tmp["sample"] = pandas.to_numeric(geno_tmp["sample"])
     urate_tmp = pandas.read_csv(data_dir + urate_file)
     withdrawn_ids = pandas.read_csv(data_dir + "w12611_20220222.csv", header=None, names=["ids"])

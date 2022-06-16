@@ -8,9 +8,9 @@ cimport cython
 
 # Just directly uses the snp major/minor 0/1/2 situation.
 def enc_v5(string_to_tok, tok_to_string, pos, p: int, a0, a1):
-    a0_toks = np.repeat(0, len(a0))
-    a01_toks = np.repeat(1, len(a0))
-    a1_toks = np.repeat(2, len(a0))
+    a0_toks  = np.array(np.repeat(0, len(a0)), dtype=np.int32)
+    a01_toks = np.array(np.repeat(1, len(a0)), dtype=np.int32)
+    a1_toks  = np.array(np.repeat(2, len(a0)), dtype=np.int32)
     for n in [0, 1, 2]:
         tok_to_string[n] = str(n)
         string_to_tok[str(n)] = n
@@ -335,8 +335,7 @@ def get_tok_mat(geno, encoding: int = 2):
                         tok_mat_view[actual_row, ind] = tok
 
     tok_mat = torch.from_numpy(tok_mat)
-    if (encoding <= 3):
-        return tok_mat, tok_to_string, string_to_tok, len(string_to_tok)
-    elif (encoding == 4):
+    if (encoding == 4):
         return tok_mat, is_nonref_mat, alleles_differ_mat, diff_lens, tok_to_string, string_to_tok, len(string_to_tok)
-
+    else :
+        return tok_mat, tok_to_string, string_to_tok, len(string_to_tok)
