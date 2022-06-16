@@ -1,2 +1,3 @@
 *.pickle
-*.parquet
+*.parque
+__pycache__/*
