@@ -111,40 +111,119 @@ def read_from_plink(remove_nan=False, subsample_control=True, encoding: int = 2,
 
     return train_phenos, snv_toks, phenos
 
-def get_train_test_verify_ids(pheno, test_frac, verify_frac):
+
+def get_train_test_verify_ids(phenos, test_frac, verify_frac):
     if exists(test_ids_file) and exists(train_ids_file) and exists(verify_ids_file):
         train_ids = pandas.read_csv(train_ids_file)
         test_ids = pandas.read_csv(test_ids_file)
         verify_ids = pandas.read_csv(verify_ids_file)
     else:
-        usable_ids = pheno.eid.values
-        gout = pheno["gout"].values
-        test_num_gout = (int)(math.ceil(np.sum(gout)*test_frac))
-        verify_num_gout = (int)(math.ceil(np.sum(gout)*verify_frac))
+        # usable_ids = phenos.eid.values
+        gout = phenos["gout"].values
+        test_num_gout = (int)(math.ceil(np.sum(gout) * test_frac))
+        verify_num_gout = (int)(math.ceil(np.sum(gout) * verify_frac))
         train_num_gout = np.sum(gout) - test_num_gout - verify_num_gout
-        train_gout_pos = np.random.choice(np.where(gout)[0], train_num_gout, replace=False)
-        non_train_gout_pos = np.setdiff1d(np.where(gout), train_gout_pos)
-        test_gout_pos = np.random.choice(non_train_gout_pos, test_num_gout, replace=False)
-        verify_gout_pos = np.setdiff1d(non_train_gout_pos, test_gout_pos)
-        train_gout_pos.sort()
-        test_gout_pos.sort()
-        verify_gout_pos.sort()
+        # train_gout_pos = np.random.choice(np.where(gout)[0], train_num_gout, replace=False)
+        # non_train_gout_pos = np.setdiff1d(np.where(gout), train_gout_pos)
+        # test_gout_pos = np.random.choice(non_train_gout_pos, test_num_gout, replace=False)
+        # verify_gout_pos = np.setdiff1d(non_train_gout_pos, test_gout_pos)
+        # train_gout_pos.sort()
+        # test_gout_pos.sort()
+        # verify_gout_pos.sort()
 
-        train_control_pos = np.random.choice(np.where(gout == False)[0], train_num_gout, replace=False)
-        non_train_control_pos = np.random.choice(np.setdiff1d(np.where(gout == False)[0], train_control_pos), test_num_gout + verify_num_gout, replace=False)
-        test_control_pos = np.random.choice(non_train_control_pos, test_num_gout, replace=False)
-        verify_control_pos = np.setdiff1d(non_train_control_pos, test_control_pos)
-        train_control_pos.sort()
-        test_control_pos.sort()
-        verify_control_pos.sort()
+        # normalise w.r.t age, sex & bmi
+        num_bins = 50
+        # get gout bmi bins
+        gout_pos = np.where(gout)[0]
+        control_pos = np.where(gout == False)[0]
+        gp = phenos.iloc[[i for i in gout_pos]]
+        cp = phenos.iloc[[i for i in control_pos]]
+        # exclude cases with 'nan' bmi or age
+        gp = gp[gp.bmi.isna() == False]
+        gp = gp[gp.age.isna() == False]
+        cp = cp[cp.bmi.isna() == False]
+        cp = cp[cp.age.isna() == False]
+        # gout_ages = gp.age.sort_values()
+        gp_age_categories = pandas.qcut(gp.age, num_bins, duplicates='drop')
+        chosen_control_eids = []
+        chosen_gout_eids = []
+        total_gout_checked = 0
+        for age_cat in gp_age_categories.unique():
+            # cp_in_age_cat = cp.iloc[[i in age_cat for i in cp.age]]
+            # gp_in_age_cat = gp.iloc[[i in age_cat for i in gp.age]]
+            cp_in_age_cat = cp[cp.age.between(age_cat.left, age_cat.right, inclusive='right')]
+            gp_in_age_cat = gp[gp.age.between(age_cat.left, age_cat.right, inclusive='right')]
+            gp_bmi_categories = pandas.qcut(gp_in_age_cat.bmi, num_bins, duplicates='drop')
+            for bmi_cat in gp_bmi_categories.unique():
+                # cp_in_age_bmi_cats = cp_in_age_cat.iloc[[i in bmi_cat for i in cp_in_age_cat.bmi]]
+                # gp_in_age_bmi_cats = gp_in_age_cat.iloc[[i in bmi_cat for i in gp_in_age_cat.bmi]]
+                cp_in_age_bmi_cats = cp_in_age_cat[cp_in_age_cat.bmi.between(bmi_cat.left, bmi_cat.right, inclusive='right')]
+                gp_in_age_bmi_cats = gp_in_age_cat[gp_in_age_cat.bmi.between(bmi_cat.left, bmi_cat.right, inclusive='right')]
+                for sex in gp.sex.unique():
+                    gp_in_age_bmi_sex_cats = gp_in_age_bmi_cats[gp_in_age_bmi_cats.sex == sex]
+                    cp_in_age_bmi_sex_cats = cp_in_age_bmi_cats[cp_in_age_bmi_cats.sex == sex]
+                    num_gout_this_case = len(gp_in_age_bmi_sex_cats)
+                    gout_eids_this_case = gp_in_age_bmi_sex_cats.eid.values
+                    available_control_ids = set(cp_in_age_bmi_sex_cats.eid) - set(chosen_control_eids)
+                    available_control_ids = [i for i in available_control_ids]
+                    control_eids_this_case = np.random.choice(available_control_ids, int(1.0*num_gout_this_case), replace=False)
+                    if (len(set(control_eids_this_case).intersection(set(chosen_control_eids))) > 0):
+                        print("Warning! sampling ids that are already chosen")
+                    if (not len(control_eids_this_case) == num_gout_this_case):
+                        print("warning! didnt' sample enough for this case")
+                    chosen_control_eids += control_eids_this_case.tolist()
+                    chosen_gout_eids += gout_eids_this_case.tolist()
+                    total_gout_checked += num_gout_this_case
+        new_cp = cp[cp.eid.isin(chosen_control_eids)]
+        gp = gp[gp.eid.isin(chosen_gout_eids)]
 
-        train_all_pos = np.concatenate([train_control_pos, train_gout_pos])
-        test_all_pos = np.concatenate([test_control_pos, test_gout_pos])
-        verify_all_pos = np.concatenate([verify_control_pos, verify_gout_pos])
+        print('num gout checked {}, num control {}'.format(total_gout_checked, len(chosen_control_eids)))
+        print(gp)
+        print(new_cp)
 
-        train_ids  = pandas.DataFrame(usable_ids[train_all_pos])
-        test_ids   = pandas.DataFrame(usable_ids[test_all_pos])
-        verify_ids = pandas.DataFrame(usable_ids[verify_all_pos])
+
+        verify_num_gout = (int)(math.ceil(len(gp) * verify_frac))
+        train_num_gout = len(gp) - test_num_gout - verify_num_gout
+
+        gp_left = gp
+        train_gout_eid = np.random.choice(gp_left.eid, train_num_gout, replace=False)
+        gp_left = gp_left[~gp_left.eid.isin(train_gout_eid)]
+        test_gout_eid = np.random.choice(gp_left.eid, test_num_gout, replace=False)
+        gp_left = gp_left[~gp_left.eid.isin(test_gout_eid)]
+        verify_gout_eid = np.random.choice(gp_left.eid, verify_num_gout, replace=False)
+
+        cp_left = new_cp
+        train_control_eid = np.random.choice(cp_left.eid, train_num_gout, replace=False)
+        cp_left = cp_left[~cp_left.eid.isin(train_control_eid)]
+        test_control_eid = np.random.choice(cp_left.eid, test_num_gout, replace=False)
+        cp_left = cp_left[~cp_left.eid.isin(test_control_eid)]
+        verify_control_eid = np.random.choice(cp_left.eid, verify_num_gout, replace=False)
+
+        train_gout_eid.sort()
+        test_gout_eid.sort()
+        verify_gout_eid.sort()
+        train_control_eid.sort()
+        test_control_eid.sort()
+        verify_control_eid.sort()
+
+        if (not len(verify_control_eid) == len(verify_gout_eid)):
+            print("Warning! verification sets not balanced: {} (gout) vs. {} (control)".format(len(verify_gout_eid), len(verify_control_eid)))
+
+    #     train_control_pos = np.random.choice(np.where(gout == False)[0], train_num_gout, replace=False)
+    #     non_train_control_pos = np.random.choice(np.setdiff1d(np.where(gout == False)[0], train_control_pos), test_num_gout + verify_num_gout, replace=False)
+    #     test_control_pos = np.random.choice(non_train_control_pos, test_num_gout, replace=False)
+    #     verify_control_pos = np.setdiff1d(non_train_control_pos, test_control_pos)
+    #     train_control_pos.sort()
+    #     test_control_pos.sort()
+    #     verify_control_pos.sort()
+
+        train_all_eids = np.concatenate([train_control_eid, train_gout_eid])
+        test_all_eids = np.concatenate([test_control_eid, test_gout_eid])
+        verify_all_eids = np.concatenate([verify_control_eid, verify_gout_eid])
+
+        train_ids  = pandas.DataFrame(train_all_eids)
+        test_ids   = pandas.DataFrame(test_all_eids)
+        verify_ids = pandas.DataFrame(verify_all_eids)
         train_ids.to_csv(train_ids_file, header=["ID"], index=False)
         test_ids.to_csv(test_ids_file, header=["ID"], index=False)
         verify_ids.to_csv(verify_ids_file, header=["ID"], index=False)
