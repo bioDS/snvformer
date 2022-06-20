@@ -12,7 +12,7 @@ import math
 from os.path import exists
 import pickle
 import csv
-from environ import *
+import environ
 
 # data_dir = os.environ['UKBB_DATA'] + "/"
 # # gwas_dir = os.environ['UKBB_DATA'] + "/gwas_associated_only/"
@@ -20,10 +20,9 @@ from environ import *
 # plink_base = os.environ['PLINK_FILE']
 # pretrain_plink_base = os.environ['PRETRAIN_PLINK_FILE']
 # urate_file = os.environ['URATE_FILE']
-data_dir = ukbb_data
-gwas_dir = ukbb_data
-pretrain_plink_base = pretrain_base
-urate_file = pheno_file
+data_dir = environ.ukbb_data
+gwas_dir = environ.ukbb_data
+urate_file = environ.pheno_file
 cache_dir = "./cache/"
 
 test_ids_file   = cache_dir + "test_ids.csv"
@@ -51,7 +50,9 @@ class Tokenised_SNVs:
         self.num_toks = num_toks
         self.positions = torch.tensor(geno.pos.values, dtype=torch.long)
 
-def read_from_plink(remove_nan=False, subsample_control=True, encoding: int = 2, test_frac=0.3, verify_frac=0.05, summarise_genos=False):
+
+def read_from_plink(parameters, remove_nan=False, subsample_control=True, encoding: int = 2, test_frac=0.3, verify_frac=0.05, summarise_genos=False):
+    plink_base = parameters['plink_base']
     print("using data from:", data_dir)
     bed_file = gwas_dir+plink_base+".bed"
     bim_file = gwas_dir+plink_base+".bim"
@@ -233,25 +234,30 @@ def get_train_test_verify_ids(phenos, test_frac, verify_frac):
     return train_ids, test_ids, verify_ids
 
 
-def get_pretrain_dataset(train_ids, encoding: int = 2):
-    print("using data from:", data_dir)
-    bed_file = gwas_dir+pretrain_plink_base+".bed"
-    bim_file = gwas_dir+pretrain_plink_base+".bim"
-    fam_file = gwas_dir+pretrain_plink_base+".fam"
-    print("bed_file:", bed_file)
-    geno_tmp = read_plink1_bin(bed_file, bim_file, fam_file)
-    geno_tmp["sample"] = pandas.to_numeric(geno_tmp["sample"])
-    urate_tmp = pandas.read_csv(data_dir + urate_file)
-    withdrawn_ids = pandas.read_csv(data_dir + "w12611_20220222.csv", header=None, names=["ids"])
-
-    usable_ids = list(set(train_ids) - set(withdrawn_ids.ids))
-    del urate_tmp
-    geno = geno_tmp[geno_tmp["sample"].isin(usable_ids)]
-    del geno_tmp
-
-    snv_toks = Tokenised_SNVs(geno, encoding)
+def get_pretrain_dataset(train_ids, params):
+    encoding = params['encoding_version']
+    pretrain_plink_base = params['pretrain_base']
+    pt_pickle = cache_dir + pretrain_plink_base + "_pretrain.pickle"
+    if (os.path.exists(pt_pickle)):
+        with open(pt_pickle, "rb") as f:
+            snv_toks = pickle.load(f)
+    else:
+        print("using data from:", data_dir)
+        bed_file = gwas_dir + pretrain_plink_base + ".bed"
+        bim_file = gwas_dir + pretrain_plink_base + ".bim"
+        fam_file = gwas_dir + pretrain_plink_base + ".fam"
+        print("bed_file:", bed_file)
+        geno_tmp = read_plink1_bin(bed_file, bim_file, fam_file)
+        geno_tmp["sample"] = pandas.to_numeric(geno_tmp["sample"])
+        withdrawn_ids = pandas.read_csv(data_dir + "w12611_20220222.csv", header=None, names=["ids"])
+        usable_ids = list(set(train_ids) - set(withdrawn_ids.ids))
+        del urate_tmp
+        geno = geno_tmp[geno_tmp["sample"].isin(usable_ids)]
+        del geno_tmp
+        snv_toks = Tokenised_SNVs(geno, encoding)
 
     return snv_toks
+
 
 def ids_to_positions(id_list, ids_in_position):
     id_to_pos = {}
@@ -310,10 +316,15 @@ def get_train_test_verify(input_phenos, geno, pheno, test_split, verify_split):
     )
     return train_ids, training_dataset, test_ids, test_dataset, verify_ids, verify_dataset
 
-def get_data(enc_ver, test_split, verify_split=0.05):
+
+def get_data(parameters):
+    plink_base = parameters['plink_base']
+    enc_ver = parameters['encoding_version']
+    test_split = parameters['test_frac']
+    verify_split = parameters['verify_frac']
     train_phenos_file = cache_dir + plink_base + '_encv-' + str(enc_ver) + '_train_phenos_cache.pickle'
     X_file = cache_dir + plink_base + '_encv-' + str(enc_ver) + '_X_cache.pickle'
-    Y_file = cache_dir + plink_base +'_encv-' + str(enc_ver) +  '_Y_cache.pickle'
+    Y_file = cache_dir + plink_base + '_encv-' + str(enc_ver) + '_Y_cache.pickle'
     if exists(X_file) and exists(Y_file) and exists(train_phenos_file):
         with open(X_file, "rb") as f:
             X = pickle.load(f)
@@ -323,7 +334,7 @@ def get_data(enc_ver, test_split, verify_split=0.05):
             train_phenos = pickle.load(f)
     else:
         print("reading data from plink")
-        train_phenos, X, Y = read_from_plink(subsample_control=True, encoding=enc_ver)
+        train_phenos, X, Y = read_from_plink(parameters, subsample_control=True, encoding=enc_ver)
         print("done, writing to pickle")
         with open(train_phenos_file, "wb") as f:
             pickle.dump(train_phenos, f, pickle.HIGHEST_PROTOCOL)
@@ -335,6 +346,7 @@ def get_data(enc_ver, test_split, verify_split=0.05):
 
     train_ids, train, test_ids, test, verify_ids, verify = get_train_test_verify(train_phenos, X, Y, test_split, verify_split)
     return train_ids, train, test_ids, test, verify_ids, verify, X, Y, enc_ver
+
 
 if __name__ == "__main__":
     # snv_toks, urate = read_from_plink(encoding=2)

@@ -9,7 +9,8 @@ import numpy as np
 from snp_input import get_data, get_pretrain_dataset, Tokenised_SNVs
 from self_attention_net import Encoder, TransformerModel, ExplicitPositionalEncoding
 from tqdm import tqdm
-# from environ import *
+# from environ import ukbb_data, pheno_file
+import environ
 
 cache_dir = "./cache/"
 
@@ -55,48 +56,42 @@ def get_mlp(in_size, vocab_size, max_seq_pos, device):
     net = simple_mlp(in_size, num_hiddens, depth, vocab_size, embed_dim, max_seq_pos, device)
     return net
 
-def get_pretrained_encoder(state_file: str, seq_len: int, num_phenos: int, max_seq_pos: int, vocab_size: int, batch_size: int, device, cls_tok: int, use_device_ids):
+
+def get_pretrained_encoder(state_file: str, params, snv_toks):
     print("attempting to load encoder from file {}".format(state_file))
-    encoder = get_encoder(seq_len, num_phenos, max_seq_pos, vocab_size, batch_size, device, cls_tok)
-    encoder = nn.DataParallel(encoder, use_device_ids)
+    encoder = get_encoder(params, snv_toks)
+    encoder = nn.DataParallel(encoder, params['use_device_ids'])
     encoder.load_state_dict(torch.load(state_file))
     return encoder
 
-def get_encoder(seq_len, num_phenos, max_seq_pos, vocab_size, batch_size, device, cls_tok):
+
+def get_encoder_from_params(p: dict, pretrain_snv_toks):
+    return get_encoder(p['encoder_size'], p['num_phenos'], pretrain_snv_toks.positions.max(), pretrain_snv_toks.num_toks, p['batch_size'], p['use_device_ids'][0], pretrain_snv_toks.string_to_tok['cls'], p)
+
+
+def get_encoder(params, pretrain_snv_toks: Tokenised_SNVs):
+    cls_tok = pretrain_snv_toks.string_to_tok['cls']
+    vocab_size = pretrain_snv_toks.num_toks
+    max_seq_pos = pretrain_snv_toks.positions.max()
     encoder = Encoder(
-        seq_len,
-        num_phenos,
+        params,
+        cls_tok,
+        vocab_size,
         max_seq_pos,
-        embed_dim=96,
-        num_heads=4,
-        num_layers=6,
-        vocab_size=vocab_size,
-        batch_size=batch_size,
-        device=device,
-        cls_tok=cls_tok,
-        use_linformer=True,
-        linformer_k=96,
     )
     return encoder
 
-def transformer_from_encoder(encoder, seq_len, num_phenos, output_type):
-    net = TransformerModel(
-        encoder,
-        seq_len,
-        num_phenos,
-        output_type
-    )
+
+def transformer_from_encoder(encoder, params):
+    net = TransformerModel(encoder, params)
     return net
 
-def get_transformer(seq_len, num_phenos, max_seq_pos, vocab_size, batch_size, device, cls_tok, output):
+
+def get_transformer(params, snv_toks):
     net = TransformerModel(
-        get_encoder(seq_len, num_phenos, max_seq_pos, vocab_size, batch_size, device, cls_tok),
-        seq_len, num_phenos, output
-    )
+        get_encoder(params, snv_toks), params)
     return net
 
-def get_train_test_simple(geno, pheno, test_split):
-    pass
 
 # mask sequences and positions at random, fill in the gaps
 def mask_sequence(seqs, pos, frac, tokenised_snvs: Tokenised_SNVs):
@@ -231,7 +226,7 @@ def mask_forward(net, seqs: torch.Tensor, pos, phenos, device, snv_toks: Tokenis
     net(phenos, expanded_seqs, expanded_pos)
 
 
-def optionally_subsample_forward(subsample, net, seqs, pos, phenos, device, snv_toks):
+def process_input(subsample, net, seqs, pos, phenos, device, snv_toks, params):
     if seqs.shape[1] < net.module.encoder.seq_len:
         return mask_forward(net, seqs, pos, phenos, device, snv_toks)
     if subsample:
@@ -242,7 +237,7 @@ def optionally_subsample_forward(subsample, net, seqs, pos, phenos, device, snv_
 
 def train_net(
     net, training_dataset, test_dataset, batch_size, num_epochs,
-        device, learning_rate, prev_num_epochs, test_split, train_log_file, plink_base, snv_toks, subsample_input=False
+        device, learning_rate, prev_num_epochs, test_split, train_log_file, plink_base, snv_toks, params, subsample_input=False
 ):
     training_iter = data.DataLoader(training_dataset, batch_size, shuffle=True)
     test_iter = data.DataLoader(test_dataset, (int)(batch_size), shuffle=True)
@@ -259,7 +254,7 @@ def train_net(
             y = y.to(device)
             pos = pos.to(device)
             # Yh = net(phenos, X, pos)  # two-value softmax (binary classification)
-            Yh = optionally_subsample_forward(subsample_input, net, X, pos, phenos, device, snv_toks)
+            Yh = process_input(subsample_input, net, X, pos, phenos, device, snv_toks, params)
             l = loss(Yh, y)
             trainer.zero_grad()
             l.mean().backward()
@@ -273,7 +268,7 @@ def train_net(
                     y = y.to(device)
                     pos = pos.to(device)
                     # Yh = net(phenos, X, pos)  # two-value softmax (binary classification)
-                    Yh = optionally_subsample_forward(subsample_input, net, X, pos, phenos, device, snv_toks)
+                    Yh = process_input(subsample_input, net, X, pos, phenos, device, snv_toks, params)
                     l = loss(Yh, y)
                     test_loss += l.mean()
             tmpstr = "epoch {}, mean loss {:.5}, {:.5} (test)".format(
@@ -286,7 +281,7 @@ def train_net(
                 tY = tY.to(device).unsqueeze(0)
                 pos = pos.to(device).unsqueeze(0)
                 phenos = phenos.to(device).unsqueeze(0)
-                tYh = optionally_subsample_forward(subsample_input, net, tX, pos, phenos, device, snv_toks)
+                tYh = process_input(subsample_input, net, tX, pos, phenos, device, snv_toks, params)
                 tzip = zip(tYh, tY)
                 for a, b in tzip:
                     print("{:.3f}, \t {}".format(a[1].item(), b.item()))
@@ -302,7 +297,7 @@ def train_net(
         tY = tY.to(device).unsqueeze(0)
         pos = pos.to(device).unsqueeze(0)
         phenos = phenos.to(device).unsqueeze(0)
-        tYh = optionally_subsample_forward(subsample_input, net, tX, pos, phenos, device, snv_toks)
+        tYh = process_input(subsample_input, net, tX, pos, phenos, device, snv_toks, params)
         tzip = zip(tYh, tY)
         for a, b in tzip:
             print("{:.3f}, \t {}".format(a[1].item(), b.item()))
@@ -313,7 +308,7 @@ def train_net(
         tY = tY.to(device).unsqueeze(0)
         pos = pos.to(device).unsqueeze(0)
         phenos = phenos.to(device).unsqueeze(0)
-        tYh = optionally_subsample_forward(subsample_input, net, tX, pos, phenos, device, snv_toks)
+        tYh = process_input(subsample_input, net, tX, pos, phenos, device, snv_toks, params)
         tzip = zip(tYh, tY)
         for a, b in tzip:
             print("{:.3f}, \t {}".format(a[1].item(), b.item()))
@@ -329,7 +324,7 @@ def train_net(
             phenos = phenos.to(device)
             tX = tX.to(device)
             tY = tY.to(device)
-            tYh = optionally_subsample_forward(subsample_input, net, tX, pos, phenos, device, snv_toks)
+            tYh = process_input(subsample_input, net, tX, pos, phenos, device, snv_toks, params)
             binary_tYh = tYh[:, 1] > 0.5
             binary_tY = tY > 0.5
             binary_tY = binary_tY.to(device)
@@ -347,7 +342,7 @@ def train_net(
             tY = tY.to(device)
             pos = pos.to(device)
             phenos = phenos.to(device)
-            tYh = optionally_subsample_forward(subsample_input, net, tX, pos, phenos, device, snv_toks)
+            tYh = process_input(subsample_input, net, tX, pos, phenos, device, snv_toks, params)
             binary_tYh = tYh[:, 1] > 0.5
             binary_tY = tY > 0.5
             binary_tY = binary_tY.to(device)
@@ -485,6 +480,7 @@ def translate_unknown(seqs, tok):
     np.place(seqs, seqs == -9, tok)
     return seqs
 
+
 def dataset_random_n(set: data.TensorDataset, n: int):
     pos, x, y = set[np.random.choice(len(set), size=n, replace=False)]
     subset = data.TensorDataset(
@@ -492,11 +488,10 @@ def dataset_random_n(set: data.TensorDataset, n: int):
     )
     return subset
 
+
 default_parameters = {
     'pretrain_base': 'all_unimputed_combined',
     'plink_base': 'genotyped_p1e-1',
-    'ukbb_data': '/data/ukbb/',
-    'pheno_file': 'phenos.csv',
     'continue_training': False,
     'train_new_encoder': False,
     'use_device_ids': [4],
@@ -506,43 +501,51 @@ default_parameters = {
     'batch_size': 5,
     'num_epochs': 10,
     'lr': 1e-7,
-    'use_device_ids': [4],
-    'output': 'tok',
-    'pretrain_epochs': 10
+    'output_type': 'tok',
+    'pretrain_epochs': 10,
+    'use_phenos': True,
+    'embed_dim': 96,
+    'num_heads': 4,
+    'num_layers': 6,
+    'linformer_k': 96,
+    'use_linformer': True,
 }
 
 
-def train_everything(parameters=default_parameters):
+def get_net_savename(parameters: dict):
+    par_str = "_".join("{}".format(v) for k, v in parameters.items())
+    par_str += '.net'
+    return par_str.replace('/', '-')
+
+
+def train_everything(params=default_parameters):
     # device = "cuda" if torch.cuda.is_available() else "cpu"
     # if (torch.cuda.device_count() > 1):
     #     device = torch.device('cuda:1')
     # load parameters
-    pretrain_base = parameters['pretrain_base']
-    plink_base = parameters['plink_base']
-    ukbb_data = parameters['ukbb_data']
-    pheno_file = parameters['pheno_file']
-    continue_training = parameters['continue_training']
-    train_new_encoder = parameters['train_new_encoder']
-    use_device_ids = parameters['use_device_ids']
-    encoding_version = parameters['encoding_version']
-    test_frac = parameters['test_frac']
-    verify_frac = parameters['verify_frac']
-    batch_size = parameters['batch_size']
-    num_epochs = parameters['num_epochs']
-    lr = parameters['lr']
-    use_device_ids = parameters['use_device_ids']
-    output = parameters['output']
-    encoder_size = parameters['encoder_size']
-    pt_epochs = parameters['pretrain_epochs']
-    pt_lr = parameters['pt_lr']
+    pretrain_base = params['pretrain_base']
+    plink_base = params['plink_base']
+    continue_training = params['continue_training']
+    train_new_encoder = params['train_new_encoder']
+    use_device_ids = params['use_device_ids']
+    encoding_version = params['encoding_version']
+    test_frac = params['test_frac']
+    verify_frac = params['verify_frac']
+    batch_size = params['batch_size']
+    num_epochs = params['num_epochs']
+    lr = params['lr']
+    use_device_ids = params['use_device_ids']
+    output = params['output_type']
+    encoder_size = params['encoder_size']
+    pt_epochs = params['pretrain_epochs']
+    pt_lr = params['pt_lr']
 
     device = use_device_ids[0]
 
-    train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(encoding_version, test_frac, verify_frac)
+    train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(params)
     snv_toks = geno
 
-    # output = "binary"
-    net_dir = "saved_nets/"
+    net_dir = environ.saved_nets_dir
 
     new_epoch = num_epochs
     new_net_name = net_dir + "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_test_split-{}_output-{}_net.pickle".format(
@@ -552,16 +555,8 @@ def train_everything(parameters=default_parameters):
     )
 
     # Pre-training
-    pt_pickle = cache_dir + pretrain_base + "_pretrain.pickle"
-    if exists(pt_pickle):
-        with open(pt_pickle, "rb") as f:
-            pretrain_snv_toks = pickle.load(f)
-    else:
-        pretrain_snv_toks = get_pretrain_dataset(train_ids, enc_ver)
-        with open(pt_pickle, "wb") as f:
-            pickle.dump(pretrain_snv_toks, f)
+    pretrain_snv_toks = get_pretrain_dataset(train_ids, params)
 
-    # max_seq_pos = geno.positions.max()
     max_seq_pos = pretrain_snv_toks.positions.max()
     print("geno num toks: {}".format(geno.num_toks))
     print("pretrain_snv_toks num toks: {}".format(pretrain_snv_toks.num_toks))
@@ -573,17 +568,15 @@ def train_everything(parameters=default_parameters):
         print(geno.tok_to_string[ft_new_toks])
 
     num_phenos = 3
-    # net = get_transformer(geno.tok_mat.shape[1], num_phenos, max_seq_pos, geno.num_toks, batch_size, device, output)
-    # encoder_file = "pretrained_encoder_v2_17_epochs.net"
     if (encoder_size == -1):
-        encoder_size = geno.tok_mat.shape[1] # the natural size for this input
-    # encoder_size = 65536
+        encoder_size = geno.tok_mat.shape[1]  # the natural size for this input
     print("creating encoder w/ input size: {}".format(encoder_size))
-    encoder_file = "pretrained_encoder_input-{}_encv-{}_insize-{}_run_epochs-{}.net".format(
-        pretrain_base, enc_ver, encoder_size, pt_epochs)
+    encoder_file = get_net_savename(params) + ".encoder"
+    # encoder_file = "pretrained_encoder_input-{}_encv-{}_insize-{}_run_epochs-{}.net".format(
+    #     pretrain_base, enc_ver, encoder_size, pt_epochs)
     if (train_new_encoder):
         pt_batch_size = batch_size
-        encoder = get_encoder(encoder_size, num_phenos, max_seq_pos, pretrain_snv_toks.num_toks, batch_size, device, pretrain_snv_toks.string_to_tok['cls'])
+        encoder = get_encoder(params, pretrain_snv_toks)
         encoder = encoder.cuda(device)
         encoder = nn.DataParallel(encoder, use_device_ids)
 
@@ -595,10 +588,10 @@ def train_everything(parameters=default_parameters):
         pt_log_file.close()
         torch.save(encoder.state_dict(), encoder_file)
     else:
-        encoder = get_pretrained_encoder(encoder_file, encoder_size, num_phenos, max_seq_pos, pretrain_snv_toks.num_toks, batch_size, device, pretrain_snv_toks.string_to_tok['cls'], use_device_ids)
+        encoder = get_pretrained_encoder(encoder_file, params, pretrain_snv_toks)
 
     # Fine-tuning
-    net = transformer_from_encoder(encoder.module, encoder_size, num_phenos, output)
+    net = transformer_from_encoder(encoder.module, params)
 
     net = nn.DataParallel(net, use_device_ids)
     if (continue_training):
@@ -628,12 +621,13 @@ def train_everything(parameters=default_parameters):
     print("test dataset: ", check_pos_neg_frac(test))
     # prepend_cls_tok(train, geno.string_to_tok['cls'])
     # prepend_cls_tok(test, geno.string_to_tok['cls'])
-    train_net(net, train, test, batch_size, num_epochs, device, lr, prev_epoch, test_frac, train_log_file, plink_base, snv_toks, subsample_input=False)
+    train_net(net, train, test, batch_size, num_epochs, device, lr, prev_epoch, test_frac, train_log_file, plink_base, snv_toks, params, subsample_input=False)
 
     train_log_file.close()
     # net = get_mlp(geno.tok_mat.shape[1], geno.num_toks, max_seq_pos, device)
 
     torch.save(net.state_dict(), new_net_name)
+    return net
 
 if __name__ == "__main__":
     train_everything()

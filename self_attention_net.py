@@ -1,6 +1,6 @@
 import torch
 from torch import nan_to_num_, nn, tensor
-from pytorch_attention import *
+from pytorch_attention import ExplicitPositionalEncoding, LinformerAttention, D2LMultiHeadAttention, AddNorm, PositionWiseFFN
 
 class TransformerBlock(nn.Module):
     def __init__(self, seq_len, embed_dim, num_heads, vocab_size, batch_size, device, use_linformer, linformer_k) -> None:
@@ -49,6 +49,7 @@ class FlattenedOutput(nn.Module):
         flat_out = flat_out.view(flat_out.shape[0], -1)
         return self.final_layer(flat_out)
 
+
 class TokenOutput(nn.Module):
     def __init__(self, embed_dim) -> None:
         super().__init__()
@@ -61,10 +62,17 @@ class TokenOutput(nn.Module):
         self.last_input = cls_tok
         return self.final_layer(cls_tok)
 
+
 # pre-trainable model
 class Encoder(nn.Module):
-    def __init__(self, seq_len, num_phenos, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, cls_tok, use_linformer=False, linformer_k=16) -> None:
+    # def __init__(self, seq_len, num_phenos, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, cls_tok, params, use_linformer=False, linformer_k=16) -> None:
+    def __init__(self, params, cls_tok, vocab_size, max_seq_pos) -> None:
         super().__init__()
+        seq_len = params['encoder_size']
+        num_phenos = params['num_phenos']
+        device = params['use_device_ids'][0]
+        embed_dim = params['embed_dim']
+        num_heads = params['num_heads']
         print("encoder vocab size: {}".format(vocab_size))
         self.cls_tok = cls_tok
         self.seq_len = seq_len
@@ -74,6 +82,7 @@ class Encoder(nn.Module):
         self.num_heads = num_heads
         self.pos_size = embed_dim - vocab_size
         self.embed_dim = embed_dim
+        self.use_phenos = params['use_phenos']
         if self.pos_size % 2 == 1:
             self.pos_size = self.pos_size - 1
         one_hot_embed_size = embed_dim - self.pos_size
@@ -81,10 +90,10 @@ class Encoder(nn.Module):
         # embedding = One_Hot_Embedding(one_hot_embed_size)
         # self.embedding = embedding.embed
         self.embedding = nn.Embedding(vocab_size, embedding_dim=one_hot_embed_size)
-        self.pos_encoding = ExplicitPositionalEncoding(self.pos_size, max_len=max_seq_pos+1)
+        self.pos_encoding = ExplicitPositionalEncoding(self.pos_size, max_len=max_seq_pos + 1)
         self.blocks = []
-        for _ in range(num_layers):
-            new_block = TransformerBlock(self.combined_seq_len, embed_dim, num_heads, vocab_size, batch_size, device, use_linformer, linformer_k) # seq_len + 1 to include cls tok
+        for _ in range(params['num_layers']):
+            new_block = TransformerBlock(self.combined_seq_len, embed_dim, num_heads, vocab_size, params['batch_size'], device, params['use_linformer'], params['linformer_k'])
             self.blocks.append(new_block)
         self.blocks = nn.ModuleList(self.blocks)
 
@@ -93,13 +102,17 @@ class Encoder(nn.Module):
         ex = self.embedding(x.long())
         # ep = self.pos_encoding(torch.zeros([x.shape[0], x.shape[1], self.pos_size], device=self.device), pos)
         ep = self.pos_encoding(torch.zeros([x.shape[0], x.shape[1], self.pos_size], device=x.device), pos)
-        phenos = torch.unsqueeze(phenos, 2).expand(-1,-1, self.pos_size + ex.shape[2]).to(x.device)
+        if self.use_phenos:
+            phenos = torch.unsqueeze(phenos, 2).expand(-1, -1, self.pos_size + ex.shape[2]).to(x.device)
         at = torch.cat([ex, ep], dim=2)
         # prepend 'cls' token to sequence
         # batch_cls = torch.nn.functional.one_hot(tensor(self.cls_tok), num_classes=self.embed_dim).repeat(x.shape[0], 1).unsqueeze(1).to(x.device)
         batch_cls = self.embedding(tensor(self.cls_tok).to(x.device)).repeat(x.shape[0], 1).unsqueeze(1).to(x.device)
         batch_cls = torch.cat([batch_cls, torch.zeros(x.shape[0], 1, self.pos_size).to(x.device)], dim=2)
-        at = torch.cat([batch_cls, phenos, at], dim=1)
+        if self.use_phenos:
+            at = torch.cat([batch_cls, phenos, at], dim=1)
+        else:
+            at = torch.cat([batch_cls, at], dim=1)
         for block in self.blocks:
             at = block(at)
         cls = at[:,0,:]
@@ -107,13 +120,17 @@ class Encoder(nn.Module):
         seq_out = at[:,self.num_phenos+1:,:]
         return cls, phen_out, seq_out
 
+
 # Fine-tunable full model
 class TransformerModel(nn.Module):
-    def __init__(self, encoder, seq_len, num_phenos, output_type) -> None:
+    def __init__(self, encoder, params) -> None:
         super().__init__()
         # self.encoder = Encoder(seq_len, num_phenos, max_seq_pos, embed_dim, num_heads, num_layers, vocab_size, batch_size, device, use_linformer, linformer_k)
         self.encoder = encoder
         embed_dim = encoder.embed_dim
+        output_type = params['output_type']
+        num_phenos = params['num_phenos']
+        seq_len = params['encoder_size']
 
         if output_type == 'tok':
             self.output = TokenOutput(embed_dim)
