@@ -78,13 +78,12 @@ def geno_only():
     net_file = saved_nets_dir + get_net_savename(parameters)
     summarise_net(net, test, parameters, net_file)
 
-
-def pheno_ternary():
+def get_pheno_ternary_parameters():
     parameters = snp_network.default_parameters
     parameters['pretrain_base'] = 'all_unimputed_combined'
     parameters['plink_base'] = 'genotyped_p1e-1'
     parameters['continue_training'] = False
-    parameters['train_new_encoder'] = True
+    parameters['train_new_encoder'] = False # re-use encoder if one has been trained
     parameters['encoding_version'] = 5
     parameters['test_frac'] = 0.25
     parameters['verify_frac'] = 0.05
@@ -102,7 +101,12 @@ def pheno_ternary():
     parameters['num_layers'] = 4
     parameters['linformer_k'] = 64
     parameters['use_linformer'] = True
+    parameters['input_filtering'] = 'match_all_phenotypes'
+    return parameters
 
+
+def pheno_ternary():
+    parameters = get_pheno_ternary_parameters()
     # TODO loading all this here is overkill
     train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(parameters)
     pretrain_snv_toks = get_pretrain_dataset(train_ids, parameters)

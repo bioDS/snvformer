@@ -130,7 +130,7 @@ def mask_sequence(seqs, pos, frac, tokenised_snvs: Tokenised_SNVs):
 
 def pretrain_encoder(
     encoder, pretrain_snv_toks, batch_size, num_epochs,
-        device, learning_rate, pretrain_base, pretrain_log_file):
+        device, learning_rate, pretrain_base, params, pretrain_log_file):
 
     print("beginning pre-training encoder")
     positions = pretrain_snv_toks.positions
@@ -193,6 +193,7 @@ def pretrain_encoder(
             #     break
 
 
+        encoder_file = environ.wip_nets_dir + get_net_savename(params) + ".encoder"
         encoder_file = "net_epochs/pretrain_{}_epoch-{}_encoder_encsize-{}.pickle".format(
             pretrain_base, e, encoder.module.seq_len
         )
@@ -555,7 +556,6 @@ def train_everything(params=default_parameters):
     # Pre-training
     pretrain_snv_toks = get_pretrain_dataset(train_ids, params)
 
-    max_seq_pos = pretrain_snv_toks.positions.max()
     print("geno num toks: {}".format(geno.num_toks))
     print("pretrain_snv_toks num toks: {}".format(pretrain_snv_toks.num_toks))
     geno_toks = set([*geno.tok_to_string.keys()])
@@ -565,14 +565,13 @@ def train_everything(params=default_parameters):
         print("Warning, fine tuning set contains new tokens!")
         print(geno.tok_to_string[ft_new_toks])
 
-    num_phenos = 3
     if (encoder_size == -1):
         encoder_size = geno.tok_mat.shape[1]  # the natural size for this input
     print("creating encoder w/ input size: {}".format(encoder_size))
-    encoder_file = get_net_savename(params) + ".encoder"
+    encoder_file = environ.saved_nets_dir + get_net_savename(params) + ".encoder"
     # encoder_file = "pretrained_encoder_input-{}_encv-{}_insize-{}_run_epochs-{}.net".format(
     #     pretrain_base, enc_ver, encoder_size, pt_epochs)
-    if (train_new_encoder):
+    if (train_new_encoder or not exists(encoder_file)):
         pt_batch_size = batch_size
         encoder = get_encoder(params, pretrain_snv_toks)
         encoder = encoder.cuda(device)
@@ -582,7 +581,7 @@ def train_everything(params=default_parameters):
         pt_log_file = open(pt_net_name + ".log", "w")
         print("pre-training encoder with sequences of length {}".format(pretrain_snv_toks.tok_mat.shape[1]))
         # prepend_cls_tok(pretrain_snv_toks.tok_mat, pretrain_snv_toks.string_to_tok['cls'])
-        pretrain_encoder(encoder, pretrain_snv_toks, pt_batch_size, pt_epochs, device, pt_lr, pretrain_base, pt_log_file)
+        pretrain_encoder(encoder, pretrain_snv_toks, pt_batch_size, pt_epochs, device, pt_lr, pretrain_base, params, pt_log_file)
         pt_log_file.close()
         torch.save(encoder.state_dict(), encoder_file)
     else:
@@ -605,12 +604,6 @@ def train_everything(params=default_parameters):
         )
     else:
         prev_epoch = 0
-        #with open(new_net_name + "_train.pickle", "wb") as f:
-        #    pickle.dump(train, f, pickle.HIGHEST_PROTOCOL)
-        #with open(new_net_name + "_test.pickle", "wb") as f:
-        #    pickle.dump(test, f, pickle.HIGHEST_PROTOCOL)
-        #with open(new_net_name + "_verify.pickle", "wb") as f:
-        #    pickle.dump(verify, f, pickle.HIGHEST_PROTOCOL)
     net = net.to(use_device_ids[0])
 
     train_log_file = open(new_net_name + "_log.txt", "w")
