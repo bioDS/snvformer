@@ -60,13 +60,13 @@ def get_mlp(in_size, vocab_size, max_seq_pos, device):
 def get_pretrained_encoder(state_file: str, params, snv_toks):
     print("attempting to load encoder from file {}".format(state_file))
     encoder = get_encoder(params, snv_toks)
-    encoder = nn.DataParallel(encoder, params['use_device_ids'])
+    encoder = nn.DataParallel(encoder, environ.use_device_ids)
     encoder.load_state_dict(torch.load(state_file))
     return encoder
 
 
 def get_encoder_from_params(p: dict, pretrain_snv_toks):
-    return get_encoder(p['encoder_size'], p['num_phenos'], pretrain_snv_toks.positions.max(), pretrain_snv_toks.num_toks, p['batch_size'], p['use_device_ids'][0], pretrain_snv_toks.string_to_tok['cls'], p)
+    return get_encoder(p['encoder_size'], p['num_phenos'], pretrain_snv_toks.positions.max(), pretrain_snv_toks.num_toks, p['batch_size'], environ.use_device_ids[0], pretrain_snv_toks.string_to_tok['cls'], p)
 
 
 def get_encoder(params, pretrain_snv_toks: Tokenised_SNVs):
@@ -163,14 +163,14 @@ def pretrain_encoder(
             chosen_positions.sort()
             seqs = seqs[:,chosen_positions]
             pos = pos[:,chosen_positions]
-            # randomly mask SNVs (but not their positions)
-            masked_seqs = mask_sequence(seqs, 0.40, pretrain_snv_toks)
+            # randomly mask SNVs (and some positions)
+            masked_seqs, masked_pos = mask_sequence(seqs, pos, 0.40, pretrain_snv_toks)
 
             # get encoded sequence
             phenos = phenos.to(device)
             masked_seqs = masked_seqs.to(device)
-            pos = pos.to(device)
-            _, _, pred_seqs = encoder(phenos, masked_seqs, pos)
+            masked_pos = masked_pos.to(device)
+            _, _, pred_seqs = encoder(phenos, masked_seqs, masked_pos)
 
             # remove positions
             # ignore first item in sequence, it's the [cls] token
@@ -494,7 +494,6 @@ default_parameters = {
     'plink_base': 'genotyped_p1e-1',
     'continue_training': False,
     'train_new_encoder': False,
-    'use_device_ids': [4],
     'encoding_version': 2,
     'test_frac': 0.25,
     'verify_frac': 0.05,
@@ -527,18 +526,17 @@ def train_everything(params=default_parameters):
     plink_base = params['plink_base']
     continue_training = params['continue_training']
     train_new_encoder = params['train_new_encoder']
-    use_device_ids = params['use_device_ids']
     encoding_version = params['encoding_version']
     test_frac = params['test_frac']
     verify_frac = params['verify_frac']
     batch_size = params['batch_size']
     num_epochs = params['num_epochs']
     lr = params['lr']
-    use_device_ids = params['use_device_ids']
     output = params['output_type']
     encoder_size = params['encoder_size']
     pt_epochs = params['pretrain_epochs']
     pt_lr = params['pt_lr']
+    use_device_ids = environ.use_device_ids
 
     device = use_device_ids[0]
 

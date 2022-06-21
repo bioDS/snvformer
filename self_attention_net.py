@@ -1,4 +1,5 @@
 import torch
+import environ
 from torch import nan_to_num_, nn, tensor
 from pytorch_attention import ExplicitPositionalEncoding, LinformerAttention, D2LMultiHeadAttention, AddNorm, PositionWiseFFN
 
@@ -70,7 +71,7 @@ class Encoder(nn.Module):
         super().__init__()
         seq_len = params['encoder_size']
         num_phenos = params['num_phenos']
-        device = params['use_device_ids'][0]
+        device = environ.use_device_ids[0]
         embed_dim = params['embed_dim']
         num_heads = params['num_heads']
         print("encoder vocab size: {}".format(vocab_size))

@@ -60,7 +60,7 @@ def main():
 
 
 def get_contributions(phenos, pos, tX, tY, net, params):
-    device = params['use_device_ids'][0]
+    device = environ.use_device_ids[0]
     num_phenos = params['num_phenos']
     phenos = phenos.unsqueeze(0)
     tX = tX.unsqueeze(0).to(device)
@@ -137,7 +137,7 @@ def summarise_net(net, test_data, parameters, net_file):
     nn_scores = []
     test_loss = 0.0
     loss = nn.CrossEntropyLoss()
-    device = parameters['use_device_ids'][0]
+    device = environ.use_device_ids[0]
     net = net.cuda(device)
     with torch.no_grad():
         for phenos, pos, tX, tY in test_iter:

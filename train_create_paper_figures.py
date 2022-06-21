@@ -2,6 +2,7 @@
 import snp_network
 import os
 import torch
+import environ
 from snp_input import get_data, get_pretrain_dataset
 from torch import nn
 from net_test_summary import summarise_net
@@ -15,7 +16,6 @@ def get_geno_only_params():
     parameters['plink_base'] = 'genotyped_p1e-1'
     parameters['continue_training'] = False
     parameters['train_new_encoder'] = True
-    parameters['use_device_ids'] = [4]
     parameters['encoding_version'] = 2
     parameters['test_frac'] = 0.25
     parameters['verify_frac'] = 0.05
@@ -42,9 +42,9 @@ def get_or_train_net(parameters, train_ids):
     if os.path.exists(net_file):
         print("reloading file: {}".format(net_file))
         net = snp_network.get_transformer_from_params(parameters, pretrain_snv_toks)
-        net = nn.DataParallel(net, parameters['use_device_ids'])
+        net = nn.DataParallel(net, environ.use_device_ids)
         net.load_state_dict(torch.load(net_file))
-        net = net.to(parameters['use_device_ids'][0])
+        net = net.to(environ.use_device_ids[0])
     else:
         print("Training new net, no saved net in file '{}'".format(net_file))
         net = snp_network.train_everything(parameters)
@@ -85,7 +85,6 @@ def pheno_ternary():
     parameters['plink_base'] = 'genotyped_p1e-1'
     parameters['continue_training'] = False
     parameters['train_new_encoder'] = True
-    parameters['use_device_ids'] = [4]
     parameters['encoding_version'] = 5
     parameters['test_frac'] = 0.25
     parameters['verify_frac'] = 0.05
@@ -116,9 +115,9 @@ def pheno_ternary():
     if os.path.exists(net_file):
         print("reloading file: {}".format(net_file))
         net = snp_network.get_transformer(parameters, pretrain_snv_toks)
-        net = nn.DataParallel(net, parameters['use_device_ids'])
+        net = nn.DataParallel(net, environ.use_device_ids)
         net.load_state_dict(torch.load(net_file))
-        net = net.to(parameters['use_device_ids'][0])
+        net = net.to(environ.use_device_ids[0])
     else:
         print("Training new net, no saved net in file '{}'".format(net_file))
         net = snp_network.train_everything(parameters)
@@ -133,7 +132,6 @@ def pheno_v1():
     parameters['plink_base'] = 'genotyped_p1e-1'
     parameters['continue_training'] = False
     parameters['train_new_encoder'] = True
-    parameters['use_device_ids'] = [4]
     parameters['encoding_version'] = 2
     parameters['test_frac'] = 0.25
     parameters['verify_frac'] = 0.05
