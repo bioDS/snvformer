@@ -61,7 +61,7 @@ def geno_only_pretrain():
 
     # reload trained network if it exists
     net_file = saved_nets_dir + get_net_savename(parameters)
-    net, pretrain_snv_toks = get_or_train_net(parameters(), train_ids)
+    net, pretrain_snv_toks = get_or_train_net(parameters, train_ids)
 
     print("summarising test-set results")
     summarise_net(net, test, parameters, net_file)
@@ -72,7 +72,7 @@ def geno_only():
     # TODO loading all this here is overkill
     train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(parameters)
 
-    net, pretrain_snv_toks = get_or_train_net(parameters(), train_ids)
+    net, pretrain_snv_toks = get_or_train_net(parameters, train_ids)
 
     print("summarising test-set results")
     net_file = saved_nets_dir + get_net_savename(parameters)
@@ -158,7 +158,7 @@ def pheno_v1():
 
     # reload trained network if it exists
     net_file = saved_nets_dir + get_net_savename(parameters)
-    net, pretrain_snv_toks = get_or_train_net(parameters(), train_ids)
+    net, pretrain_snv_toks = get_or_train_net(parameters, train_ids)
 
     print("summarising test-set results")
     summarise_net(net, test, parameters, net_file)
@@ -168,6 +168,6 @@ if __name__ == "__main__":
     home_dir = os.environ.get("HOME")
     os.chdir(home_dir + "/work/gout-transformer")
 
-    # geno_only()
+    geno_only()
     # pheno_v1() # done
-    pheno_ternary()
+    # pheno_ternary()
