@@ -68,7 +68,7 @@ def read_from_plink(parameters, remove_nan=False, subsample_control=True, encodi
     del geno_tmp
 
     print("getting train/test/verify split")
-    train_ids, test_ids, verify_ids = get_train_test_verify_ids(phenos, test_frac, verify_frac)
+    train_ids, test_ids, verify_ids = get_train_test_verify_ids(phenos, parameters)
 
     if (subsample_control):
         print("reducing to even control/non-control split")
@@ -217,7 +217,7 @@ def get_train_test_verify_ids(phenos, parameters):
 def get_pretrain_dataset(train_ids, params):
     encoding = params['encoding_version']
     pretrain_plink_base = params['pretrain_base']
-    pt_pickle = cache_dir + pretrain_plink_base + "_pretrain.pickle"
+    pt_pickle = cache_dir + "{}_encv{}_pretrain.pickle".format(pretrain_plink_base, encoding)
     if (os.path.exists(pt_pickle)):
         with open(pt_pickle, "rb") as f:
             snv_toks = pickle.load(f)
@@ -231,7 +231,6 @@ def get_pretrain_dataset(train_ids, params):
         geno_tmp["sample"] = pandas.to_numeric(geno_tmp["sample"])
         withdrawn_ids = pandas.read_csv(data_dir + "w12611_20220222.csv", header=None, names=["ids"])
         usable_ids = list(set(train_ids) - set(withdrawn_ids.ids))
-        del urate_tmp
         geno = geno_tmp[geno_tmp["sample"].isin(usable_ids)]
         del geno_tmp
         snv_toks = Tokenised_SNVs(geno, encoding)

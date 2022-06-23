@@ -10,7 +10,6 @@ def enc_v6(string_to_tok, tok_to_string, pos: int, p: int, a0, a1):
     a0_toks = np.zeros(p, dtype=np.int32)
     a1_toks = np.zeros(p, dtype=np.int32)
     a01_toks = np.zeros(p, dtype=np.int32)
-    diff_lens= np.zeros(p, dtype=np.int32)
 
     cdef int a_tok
     cdef int b_tok
@@ -71,7 +70,6 @@ def enc_v6(string_to_tok, tok_to_string, pos: int, p: int, a0, a1):
         a01_toks[i] = ab_tok
         a0_toks[i] = a_tok
         a1_toks[i] = b_tok
-        diff_lens[i] = b_len - a_len
 
     return a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok
 
@@ -368,7 +366,7 @@ def get_tok_mat(geno, encoding: int = 2):
     cdef int [:,:] geno_mat_view
     cdef int actual_row = 0
     cdef int batch
-    cdef int enc_var = encoding
+    cdef int enc_ver = encoding
     cdef int actual_batch_len
     for batch in tqdm(range(int(np.ceil(float(n)/batch_size)))):
         geno_mat = np.array(geno[batch*batch_size:(batch+1)*batch_size].values, dtype=np.int32)
@@ -379,7 +377,7 @@ def get_tok_mat(geno, encoding: int = 2):
                 actual_row = batch * batch_size + ri
                 if actual_row < n:
                     for ind in range(p):
-                        if (enc_var == 4):
+                        if (enc_ver == 4):
                             val = geno_mat_view[ri, ind]
                             if val == 0:
                                 tok = a0_toks_view[ind]

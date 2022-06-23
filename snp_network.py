@@ -563,8 +563,8 @@ def train_everything(params=default_parameters):
     pt_toks = set([*pretrain_snv_toks.tok_to_string.keys()])
     ft_new_toks = geno_toks - geno_toks.intersection(pt_toks)
     if (len(ft_new_toks) > 0):
-        print("Warning, fine tuning set contains new tokens!")
-        print(geno.tok_to_string[ft_new_toks])
+        print([geno.tok_to_string[i] for i in ft_new_toks])
+        raise Exception("Warning, fine tuning set contains new tokens!")
 
     if (encoder_size == -1):
         encoder_size = geno.tok_mat.shape[1]  # the natural size for this input
