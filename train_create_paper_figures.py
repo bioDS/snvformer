@@ -33,8 +33,35 @@ def get_geno_only_params():
     parameters['num_layers'] = 4
     parameters['linformer_k'] = 64
     parameters['use_linformer'] = True
+    parameters['input_filtering'] = 'random_test_verify'
     return parameters
 
+
+def get_v6_params():
+    parameters = snp_network.default_parameters
+    parameters['pretrain_base'] = 'all_unimputed_combined'
+    parameters['plink_base'] = 'genotyped_p1e-1'
+    parameters['continue_training'] = False
+    parameters['train_new_encoder'] = False
+    parameters['encoding_version'] = 6
+    parameters['test_frac'] = 0.25
+    parameters['verify_frac'] = 0.05
+    parameters['batch_size'] = 5
+    parameters['num_epochs'] = 40
+    parameters['lr'] = 1e-7
+    parameters['pt_lr'] = 1e-7
+    parameters['encoder_size'] = 65803  # the size of gneotyped_p1e-1
+    parameters['pretrain_epochs'] = 50
+    parameters['num_phenos'] = 3
+    parameters['use_phenos'] = True
+    parameters['output_type'] = 'tok'
+    parameters['embed_dim'] = 64
+    parameters['num_heads'] = 4
+    parameters['num_layers'] = 4
+    parameters['linformer_k'] = 64
+    parameters['use_linformer'] = True
+    parameters['input_filtering'] = 'random_test_verify'
+    return parameters
 
 def get_or_train_net(parameters, train_ids):
     pretrain_snv_toks = get_pretrain_dataset(train_ids, parameters)
@@ -50,6 +77,17 @@ def get_or_train_net(parameters, train_ids):
         net = snp_network.train_everything(parameters)
         torch.save(net.state_dict(), net_file)
     return net
+
+
+# v6 encoding, pretraining
+def combined_v6():
+    parameters = get_v6_params()
+    train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(parameters)
+    pretrain_snv_toks = get_pretrain_dataset(train_ids, parameters)
+    net_file = saved_nets_dir + get_net_savename(parameters)
+    net, pretrain_snv_toks = get_or_train_net(parameters, train_ids)
+    print("summarising test-set results")
+    summarise_net(net, test, parameters, net_file)
 
 
 def geno_only_pretrain():
@@ -101,7 +139,8 @@ def get_pheno_ternary_parameters():
     parameters['num_layers'] = 4
     parameters['linformer_k'] = 64
     parameters['use_linformer'] = True
-    parameters['input_filtering'] = 'match_all_phenotypes'
+    #parameters['input_filtering'] = 'match_all_phenotypes'
+    parameters['input_filtering'] = 'random_test_verify'
     return parameters
 
 
@@ -170,6 +209,7 @@ if __name__ == "__main__":
     home_dir = os.environ.get("HOME")
     os.chdir(home_dir + "/work/gout-transformer")
 
-    geno_only()
+    # geno_only()
     # pheno_v1() # done
     # pheno_ternary()
+    combined_v6()
