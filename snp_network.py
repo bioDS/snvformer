@@ -509,6 +509,7 @@ default_parameters = {
     'num_layers': 6,
     'linformer_k': 96,
     'use_linformer': True,
+    'input_filtering': 'random_test_verify',
 }
 
 

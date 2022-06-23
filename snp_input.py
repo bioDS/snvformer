@@ -25,10 +25,6 @@ gwas_dir = environ.ukbb_data
 urate_file = environ.pheno_file
 cache_dir = "./cache/"
 
-test_ids_file   = cache_dir + "test_ids.csv"
-train_ids_file  = cache_dir + "train_ids.csv"
-verify_ids_file = cache_dir + "verify_ids.csv"
-
 class Tokenised_SNVs:
     def __init__(self, geno, encoding: int):
         # val == 0 means we have two 'a0' vals
@@ -112,8 +108,50 @@ def read_from_plink(parameters, remove_nan=False, subsample_control=True, encodi
 
     return train_phenos, snv_toks, phenos
 
+def match_phenos(cp, gp, num_bins):
+    # exclude cases with 'nan' bmi or age
+    gp = gp[gp.bmi.isna() == False]
+    gp = gp[gp.age.isna() == False]
+    cp = cp[cp.bmi.isna() == False]
+    cp = cp[cp.age.isna() == False]
+    gp_age_categories = pandas.qcut(gp.age, num_bins, duplicates='drop')
+    chosen_control_eids = []
+    chosen_gout_eids = []
+    total_gout_checked = 0
+    for age_cat in gp_age_categories.unique():
+        cp_in_age_cat = cp[cp.age.between(age_cat.left, age_cat.right, inclusive='right')]
+        gp_in_age_cat = gp[gp.age.between(age_cat.left, age_cat.right, inclusive='right')]
+        gp_bmi_categories = pandas.qcut(gp_in_age_cat.bmi, num_bins, duplicates='drop')
+        for bmi_cat in gp_bmi_categories.unique():
+            cp_in_age_bmi_cats = cp_in_age_cat[cp_in_age_cat.bmi.between(bmi_cat.left, bmi_cat.right, inclusive='right')]
+            gp_in_age_bmi_cats = gp_in_age_cat[gp_in_age_cat.bmi.between(bmi_cat.left, bmi_cat.right, inclusive='right')]
+            for sex in gp.sex.unique():
+                gp_in_age_bmi_sex_cats = gp_in_age_bmi_cats[gp_in_age_bmi_cats.sex == sex]
+                cp_in_age_bmi_sex_cats = cp_in_age_bmi_cats[cp_in_age_bmi_cats.sex == sex]
+                num_gout_this_case = len(gp_in_age_bmi_sex_cats)
+                gout_eids_this_case = gp_in_age_bmi_sex_cats.eid.values
+                available_control_ids = set(cp_in_age_bmi_sex_cats.eid) - set(chosen_control_eids)
+                available_control_ids = [i for i in available_control_ids]
+                control_eids_this_case = np.random.choice(available_control_ids, int(1.0*num_gout_this_case), replace=False)
+                if (len(set(control_eids_this_case).intersection(set(chosen_control_eids))) > 0):
+                    print("Warning! sampling ids that are already chosen")
+                if (not len(control_eids_this_case) == num_gout_this_case):
+                    print("warning! didnt' sample enough for this case")
+                chosen_control_eids += control_eids_this_case.tolist()
+                chosen_gout_eids += gout_eids_this_case.tolist()
+                total_gout_checked += num_gout_this_case
+    new_cp = cp[cp.eid.isin(chosen_control_eids)]
+    gp = gp[gp.eid.isin(chosen_gout_eids)]
+    return new_cp, gp
 
-def get_train_test_verify_ids(phenos, test_frac, verify_frac):
+def get_train_test_verify_ids(phenos, parameters):
+    test_frac = parameters['test_frac']
+    verify_frac = parameters['verify_frac']
+    input_filtering = parameters['input_filtering']
+    test_ids_file   = cache_dir + input_filtering + "-test_ids.csv"
+    train_ids_file  = cache_dir + input_filtering + "-train_ids.csv"
+    verify_ids_file = cache_dir + input_filtering + "-verify_ids.csv"
+
     if exists(test_ids_file) and exists(train_ids_file) and exists(verify_ids_file):
         train_ids = pandas.read_csv(train_ids_file)
         test_ids = pandas.read_csv(test_ids_file)
@@ -124,64 +162,13 @@ def get_train_test_verify_ids(phenos, test_frac, verify_frac):
         test_num_gout = (int)(math.ceil(np.sum(gout) * test_frac))
         verify_num_gout = (int)(math.ceil(np.sum(gout) * verify_frac))
         train_num_gout = np.sum(gout) - test_num_gout - verify_num_gout
-        # train_gout_pos = np.random.choice(np.where(gout)[0], train_num_gout, replace=False)
-        # non_train_gout_pos = np.setdiff1d(np.where(gout), train_gout_pos)
-        # test_gout_pos = np.random.choice(non_train_gout_pos, test_num_gout, replace=False)
-        # verify_gout_pos = np.setdiff1d(non_train_gout_pos, test_gout_pos)
-        # train_gout_pos.sort()
-        # test_gout_pos.sort()
-        # verify_gout_pos.sort()
-
+        gp = phenos[gout]
+        cp = phenos[~gout]
+        if input_filtering == "random_test_verify":
+            new_cp = cp.iloc[np.random.choice(len(cp), len(gp), replace=False)]
         # normalise w.r.t age, sex & bmi
-        num_bins = 50
-        # get gout bmi bins
-        gout_pos = np.where(gout)[0]
-        control_pos = np.where(gout == False)[0]
-        gp = phenos.iloc[[i for i in gout_pos]]
-        cp = phenos.iloc[[i for i in control_pos]]
-        # exclude cases with 'nan' bmi or age
-        gp = gp[gp.bmi.isna() == False]
-        gp = gp[gp.age.isna() == False]
-        cp = cp[cp.bmi.isna() == False]
-        cp = cp[cp.age.isna() == False]
-        # gout_ages = gp.age.sort_values()
-        gp_age_categories = pandas.qcut(gp.age, num_bins, duplicates='drop')
-        chosen_control_eids = []
-        chosen_gout_eids = []
-        total_gout_checked = 0
-        for age_cat in gp_age_categories.unique():
-            # cp_in_age_cat = cp.iloc[[i in age_cat for i in cp.age]]
-            # gp_in_age_cat = gp.iloc[[i in age_cat for i in gp.age]]
-            cp_in_age_cat = cp[cp.age.between(age_cat.left, age_cat.right, inclusive='right')]
-            gp_in_age_cat = gp[gp.age.between(age_cat.left, age_cat.right, inclusive='right')]
-            gp_bmi_categories = pandas.qcut(gp_in_age_cat.bmi, num_bins, duplicates='drop')
-            for bmi_cat in gp_bmi_categories.unique():
-                # cp_in_age_bmi_cats = cp_in_age_cat.iloc[[i in bmi_cat for i in cp_in_age_cat.bmi]]
-                # gp_in_age_bmi_cats = gp_in_age_cat.iloc[[i in bmi_cat for i in gp_in_age_cat.bmi]]
-                cp_in_age_bmi_cats = cp_in_age_cat[cp_in_age_cat.bmi.between(bmi_cat.left, bmi_cat.right, inclusive='right')]
-                gp_in_age_bmi_cats = gp_in_age_cat[gp_in_age_cat.bmi.between(bmi_cat.left, bmi_cat.right, inclusive='right')]
-                for sex in gp.sex.unique():
-                    gp_in_age_bmi_sex_cats = gp_in_age_bmi_cats[gp_in_age_bmi_cats.sex == sex]
-                    cp_in_age_bmi_sex_cats = cp_in_age_bmi_cats[cp_in_age_bmi_cats.sex == sex]
-                    num_gout_this_case = len(gp_in_age_bmi_sex_cats)
-                    gout_eids_this_case = gp_in_age_bmi_sex_cats.eid.values
-                    available_control_ids = set(cp_in_age_bmi_sex_cats.eid) - set(chosen_control_eids)
-                    available_control_ids = [i for i in available_control_ids]
-                    control_eids_this_case = np.random.choice(available_control_ids, int(1.0*num_gout_this_case), replace=False)
-                    if (len(set(control_eids_this_case).intersection(set(chosen_control_eids))) > 0):
-                        print("Warning! sampling ids that are already chosen")
-                    if (not len(control_eids_this_case) == num_gout_this_case):
-                        print("warning! didnt' sample enough for this case")
-                    chosen_control_eids += control_eids_this_case.tolist()
-                    chosen_gout_eids += gout_eids_this_case.tolist()
-                    total_gout_checked += num_gout_this_case
-        new_cp = cp[cp.eid.isin(chosen_control_eids)]
-        gp = gp[gp.eid.isin(chosen_gout_eids)]
-
-        print('num gout checked {}, num control {}'.format(total_gout_checked, len(chosen_control_eids)))
-        print(gp)
-        print(new_cp)
-
+        elif input_filtering == "match_all_phenotypes":
+            new_cp, gp = match_phenos(cp, gp, num_bins=50)
 
         verify_num_gout = (int)(math.ceil(len(gp) * verify_frac))
         train_num_gout = len(gp) - test_num_gout - verify_num_gout
@@ -210,13 +197,6 @@ def get_train_test_verify_ids(phenos, test_frac, verify_frac):
         if (not len(verify_control_eid) == len(verify_gout_eid)):
             print("Warning! verification sets not balanced: {} (gout) vs. {} (control)".format(len(verify_gout_eid), len(verify_control_eid)))
 
-    #     train_control_pos = np.random.choice(np.where(gout == False)[0], train_num_gout, replace=False)
-    #     non_train_control_pos = np.random.choice(np.setdiff1d(np.where(gout == False)[0], train_control_pos), test_num_gout + verify_num_gout, replace=False)
-    #     test_control_pos = np.random.choice(non_train_control_pos, test_num_gout, replace=False)
-    #     verify_control_pos = np.setdiff1d(non_train_control_pos, test_control_pos)
-    #     train_control_pos.sort()
-    #     test_control_pos.sort()
-    #     verify_control_pos.sort()
 
         train_all_eids = np.concatenate([train_control_eid, train_gout_eid])
         test_all_eids = np.concatenate([test_control_eid, test_gout_eid])
@@ -267,12 +247,12 @@ def ids_to_positions(id_list, ids_in_position):
     return np.array(pos_list)
 
 
-def get_train_test_verify(input_phenos, geno, pheno, test_split, verify_split):
+def get_train_test_verify(input_phenos, geno, pheno, parameters):
     # urate = pheno["urate"].values
     gout = pheno["gout"].values
     # test_cutoff = (int)(math.ceil(test_split * geno.tok_mat.shape[0]))
 
-    train_ids, test_ids, verify_ids = get_train_test_verify_ids(pheno, test_split, verify_split)
+    train_ids, test_ids, verify_ids = get_train_test_verify_ids(pheno, parameters)
     train_all_pos = ids_to_positions(train_ids, geno.ids)
     test_all_pos = ids_to_positions(test_ids, geno.ids)
     verify_all_pos = ids_to_positions(verify_ids, geno.ids)
@@ -344,7 +324,7 @@ def get_data(parameters):
             pickle.dump(Y, f, pickle.HIGHEST_PROTOCOL)
         print("done")
 
-    train_ids, train, test_ids, test, verify_ids, verify = get_train_test_verify(train_phenos, X, Y, test_split, verify_split)
+    train_ids, train, test_ids, test, verify_ids, verify = get_train_test_verify(train_phenos, X, Y, parameters)
     return train_ids, train, test_ids, test, verify_ids, verify, X, Y, enc_ver
 
 
@@ -360,7 +340,7 @@ if __name__ == "__main__":
     enc_ver = 5
     test_frac = 0.25
     verify_frac = 0.05
-    geno_tmp = read_plink1_bin(ukbb_data + "/all_gwas.bed")
+    geno_tmp = read_plink1_bin(environ.ukbb_data + "/all_gwas.bed")
     geno_tmp["sample"] = pandas.to_numeric(geno_tmp["sample"])
     urate_tmp = pandas.read_csv(data_dir + urate_file)
     withdrawn_ids = pandas.read_csv(data_dir + "w12611_20220222.csv", header=None, names=["ids"])
