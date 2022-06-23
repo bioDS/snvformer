@@ -6,6 +6,76 @@ from tqdm import tqdm
 cimport cython
 
 
+def enc_v6(string_to_tok, tok_to_string, pos: int, p: int, a0, a1):
+    a0_toks = np.zeros(p, dtype=np.int32)
+    a1_toks = np.zeros(p, dtype=np.int32)
+    a01_toks = np.zeros(p, dtype=np.int32)
+    diff_lens= np.zeros(p, dtype=np.int32)
+
+    cdef int a_tok
+    cdef int b_tok
+    cdef int ab_tok
+    cdef int diff_len
+
+    for i,(a,b) in enumerate(zip(a0,a1)):
+        a = str(a)
+        b = str(b)
+        a_len = len(a)
+        b_len = len(b)
+        # a, b are both len 1
+        if a_len == 1 and b_len == 1:
+            a_string = a
+            b_string = b
+            ab_string = a + ',' + b
+        # a > b
+        elif a_len > b_len:
+            a_string = 'longer'
+            b_string = 'shorter'
+            ab_string = 'mixed_indel'
+        # b > a
+        elif b_len > a_len:
+            b_string = 'longer'
+            a_string = 'shorter'
+            ab_string = 'mixed_indel'
+        # a, b equal length, both > 1
+        elif a_len == b_len and a_len > 1:
+            a_string = 'long_sub'
+            b_string = 'long_sub'
+            ab_string = 'mixed_long_sub'
+
+        # a0
+        if a_string in string_to_tok:
+            a_tok = string_to_tok[a_string]
+        else:
+            a_tok = pos
+            string_to_tok[a_string] = pos
+            tok_to_string[pos] = a_string
+            pos = pos + 1
+        # a1
+        if b_string in string_to_tok:
+            b_tok = string_to_tok[b_string]
+        else:
+            b_tok = pos
+            string_to_tok[b_string] = pos
+            tok_to_string[pos] = b_string
+            pos = pos + 1
+        # a01
+        if ab_string in string_to_tok:
+            ab_tok = string_to_tok[ab_string]
+        else:
+            ab_tok = pos
+            string_to_tok[ab_string] = pos
+            tok_to_string[pos] = ab_string
+            pos = pos + 1
+
+        a01_toks[i] = ab_tok
+        a0_toks[i] = a_tok
+        a1_toks[i] = b_tok
+        diff_lens[i] = b_len - a_len
+
+    return a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok
+
+
 # Just directly uses the snp major/minor 0/1/2 situation.
 def enc_v5(string_to_tok, tok_to_string, pos, p: int, a0, a1):
     a0_toks  = np.array(np.repeat(0, len(a0)), dtype=np.int32)
@@ -15,6 +85,7 @@ def enc_v5(string_to_tok, tok_to_string, pos, p: int, a0, a1):
         tok_to_string[n] = str(n)
         string_to_tok[str(n)] = n
     return a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok
+
 
 def enc_v4(string_to_tok, tok_to_string, pos, p: int, a0, a1):
     a0_toks = np.zeros(p, dtype=np.int32)
@@ -271,6 +342,8 @@ def get_tok_mat(geno, encoding: int = 2):
         a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok, diff_lens = enc_v4(string_to_tok, tok_to_string, pos, p, a0, a1)
     elif (encoding == 5):
         a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok = enc_v5(string_to_tok, tok_to_string, pos, p, a0, a1)
+    elif (encoding == 6):
+        a0_toks, a1_toks, a01_toks, tok_to_string, string_to_tok = enc_v6(string_to_tok, tok_to_string, pos, p, a0, a1)
 
     # geno_mat = np.matrix(geno.values, dtype=np.int32)
     # we can get away with this because there are very few unique variations
