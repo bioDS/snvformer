@@ -234,6 +234,8 @@ def get_pretrain_dataset(train_ids, params):
         geno = geno_tmp[geno_tmp["sample"].isin(usable_ids)]
         del geno_tmp
         snv_toks = Tokenised_SNVs(geno, encoding)
+        with open(pt_pickle, "wb") as f:
+            pickle.dump(snv_toks, f, pickle.HIGHEST_PROTOCOL)
 
     return snv_toks
 
