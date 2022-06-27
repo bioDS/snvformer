@@ -47,7 +47,7 @@ def get_v6_params():
     parameters['test_frac'] = 0.25
     parameters['verify_frac'] = 0.05
     parameters['batch_size'] = 5
-    parameters['num_epochs'] = 40
+    parameters['num_epochs'] = 150
     parameters['lr'] = 1e-7
     parameters['pt_lr'] = 1e-7
     parameters['encoder_size'] = 65803  # the size of gneotyped_p1e-1
@@ -68,7 +68,7 @@ def get_or_train_net(parameters, train_ids):
     net_file = saved_nets_dir + get_net_savename(parameters)
     if os.path.exists(net_file):
         print("reloading file: {}".format(net_file))
-        net = snp_network.get_transformer_from_params(parameters, pretrain_snv_toks)
+        net = snp_network.get_transformer(parameters, pretrain_snv_toks)
         net = nn.DataParallel(net, environ.use_device_ids)
         net.load_state_dict(torch.load(net_file))
         net = net.to(environ.use_device_ids[0])
@@ -76,14 +76,13 @@ def get_or_train_net(parameters, train_ids):
         print("Training new net, no saved net in file '{}'".format(net_file))
         net = snp_network.train_everything(parameters)
         torch.save(net.state_dict(), net_file)
-    return net
+    return net, pretrain_snv_toks
 
 
 # v6 encoding, pretraining
 def combined_v6():
     parameters = get_v6_params()
     train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(parameters)
-    pretrain_snv_toks = get_pretrain_dataset(train_ids, parameters)
     net_file = saved_nets_dir + get_net_savename(parameters)
     net, pretrain_snv_toks = get_or_train_net(parameters, train_ids)
     print("summarising test-set results")
