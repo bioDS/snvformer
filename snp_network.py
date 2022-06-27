@@ -287,9 +287,7 @@ def train_net(
                 for a, b in tzip:
                     print("{:.3f}, \t {}".format(a[1].item(), b.item()))
 
-            net_file = "net_epochs/{}_batch-{}_epoch-{}_test_split-{}_net.pickle".format(
-                plink_base, batch_size, e + prev_num_epochs, test_split
-            )
+            net_file = "net_epochs/{}_epoch-{}".format(get_net_savename(params), e)
             torch.save(net.state_dict(), net_file)
 
     print("random few train cases:")
@@ -569,7 +567,8 @@ def train_everything(params=default_parameters):
     if (encoder_size == -1):
         encoder_size = geno.tok_mat.shape[1]  # the natural size for this input
     print("creating encoder w/ input size: {}".format(encoder_size))
-    encoder_file = environ.saved_nets_dir + get_net_savename(params) + ".encoder"
+    encoder_params = {k:params[k] for k in('pretrain_base', 'encoding_version', 'test_frac', 'verify_frac', 'batch_size', 'pt_lr', 'encoder_size', 'num_phenos', 'pretrain_epochs', 'input_filtering')}
+    encoder_file = environ.saved_nets_dir + get_net_savename(encoder_params) + ".encoder"
     # encoder_file = "pretrained_encoder_input-{}_encv-{}_insize-{}_run_epochs-{}.net".format(
     #     pretrain_base, enc_ver, encoder_size, pt_epochs)
     if (train_new_encoder or not exists(encoder_file)):
@@ -593,16 +592,10 @@ def train_everything(params=default_parameters):
 
     net = nn.DataParallel(net, use_device_ids)
     if (continue_training):
-        prev_epoch = 10
-        prev_batch_size = 10
-        prev_net_name = net_dir + "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_test_split-{}_output-{}_net.pickle".format(
-            plink_base, str(enc_ver), prev_batch_size, prev_epoch, encoder_size, geno.tok_mat.shape[0], prev_epoch, test_frac, output
-    )
+        prev_params = params['prev_params']
+        prev_net_name = environ.saved_nets_dir + get_net_savename(prev_params)
         net.load_state_dict(torch.load(prev_net_name))
-        new_epoch = prev_epoch + num_epochs
-        new_net_name = net_dir + "{}_encv-{}_batch-{}_epochs-{}_p-{}_n-{}_epoch-{}_output-{}_net.pickle".format(
-            plink_base, str(enc_ver), batch_size, num_epochs, encoder_size, geno.tok_mat.shape[0], new_epoch, output
-        )
+        new_net_name = environ.saved_nets_dir + get_net_savename(params)
     else:
         prev_epoch = 0
     net = net.to(use_device_ids[0])
