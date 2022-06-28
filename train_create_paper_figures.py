@@ -10,6 +10,42 @@ from snp_network import get_net_savename
 from environ import saved_nets_dir
 
 
+def get_pheno_only_params():
+    parameters = snp_network.default_parameters
+    parameters['pretrain_base'] = 'all_unimputed_combined'
+    parameters['plink_base'] = 'genotyped_p1e-1'
+    parameters['continue_training'] = False
+    parameters['train_new_encoder'] = False
+    parameters['encoding_version'] = 6
+    parameters['test_frac'] = 0.25
+    parameters['verify_frac'] = 0.05
+    parameters['batch_size'] = 5
+    parameters['num_epochs'] = 50
+    parameters['lr'] = 1e-7
+    parameters['pt_lr'] = 1e-7
+    parameters['encoder_size'] = 65803  # the size of gneotyped_p1e-1
+    parameters['pretrain_epochs'] = 0
+    parameters['num_phenos'] = 3
+    parameters['use_phenos'] = True
+    parameters['output_type'] = 'tok'
+    parameters['embed_dim'] = 64
+    parameters['num_heads'] = 4
+    parameters['num_layers'] = 4
+    parameters['linformer_k'] = 64
+    parameters['use_linformer'] = True
+    parameters['input_filtering'] = 'random_test_verify'
+    parameters['mask_genotypes'] = True
+    return parameters
+
+def pheno_only():
+    parameters = get_pheno_only_params()
+    train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(parameters)
+    net_file = saved_nets_dir + get_net_savename(parameters)
+    net, pretrain_snv_toks = get_or_train_net(parameters, train_ids)
+    print("summarising test-set results")
+    summarise_net(net, test, parameters, net_file)
+
+
 def get_geno_only_params():
     parameters = snp_network.default_parameters
     parameters['pretrain_base'] = 'all_unimputed_combined'
@@ -211,4 +247,5 @@ if __name__ == "__main__":
     # geno_only()
     # pheno_v1() # done
     # pheno_ternary()
-    combined_v6()
+    # combined_v6()
+    pheno_only()

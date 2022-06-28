@@ -224,16 +224,24 @@ def mask_forward(net, seqs: torch.Tensor, pos, phenos, device, snv_toks: Tokenis
     expanded_seqs[:, orig_seq_len:] = mask_tok
     expanded_pos = pos[:, encoder_size]
     expanded_pos[:, orig_seq_len:] = -1
-    net(phenos, expanded_seqs, expanded_pos)
+    return net(phenos, expanded_seqs, expanded_pos)
 
+def mask_all_genos_forward(net, seqs, phenos, snv_toks):
+    mask_seqs = torch.tensor(snv_toks.string_to_tok['mask']).expand(seqs.shape[0], seqs.shape[1])
+    mask_pos = torch.tensor(-1).expand(seqs.shape[0], seqs.shape[1])
+    return net(phenos, mask_seqs, mask_pos)
 
+    
 def process_input(subsample, net, seqs, pos, phenos, device, snv_toks, params):
-    if seqs.shape[1] < net.module.encoder.seq_len:
-        return mask_forward(net, seqs, pos, phenos, device, snv_toks)
-    if subsample:
-        return subsample_forward(net, seqs, pos, phenos, device)
+    if params['mask_genotypes']:
+        return mask_all_genos_forward(net, seqs, phenos, snv_toks)
     else:
-        return net(phenos, seqs, pos)
+        if seqs.shape[1] < net.module.encoder.seq_len:
+            return mask_forward(net, seqs, pos, phenos, device, snv_toks)
+        if subsample:
+            return subsample_forward(net, seqs, pos, phenos, device)
+        else:
+            return net(phenos, seqs, pos)
 
 
 def train_net(
@@ -508,6 +516,7 @@ default_parameters = {
     'linformer_k': 96,
     'use_linformer': True,
     'input_filtering': 'random_test_verify',
+    'mask_genotypes': False,
 }
 
 
