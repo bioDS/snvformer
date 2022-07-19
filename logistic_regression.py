@@ -46,12 +46,11 @@ class tin_geno_pheno(nn.Module):
             nn.Linear(num_geno, 1, bias=False),
         )
         self.pheno_linear = nn.Sequential(
-            nn.Linear(num_geno, 1, bias=False),
+            nn.Linear(num_pheno, 1, bias=True),
         )
 
     def forward(self, phenos, x, pos):
         lin_out = self.geno_linear(x.float()) + self.pheno_linear(phenos.float())
-        lin_out = lin_out.unsqueeze(1)
         lin_out = lin_out.repeat([1, 2])
         lin_out[:,0] = 1-lin_out[:,1]
         return lin_out
@@ -75,6 +74,22 @@ class logistic_geno(nn.Module):
         # quit()
         return lin_out
 
+
+class secretly_logistic_geno_only(nn.Module):
+    def __init__(self, num_phenos):
+        super().__init__()
+        self.linear = nn.Sequential(
+            nn.Linear(num_phenos, 1),
+            nn.Sigmoid(),
+        )
+        self.linear.apply(init_weights)
+
+    def forward(self, phenos, x, pos):
+        lin_out = self.linear(x.float())
+        lin_out = lin_out.repeat([1, 2])
+        lin_out[:,0] = 1-lin_out[:,1]
+        return lin_out
+
 class secretly_logistic(nn.Module):
     def __init__(self, num_phenos):
         super().__init__()
@@ -86,6 +101,8 @@ class secretly_logistic(nn.Module):
 
     def forward(self, phenos, x, pos):
         lin_out = self.linear(phenos.float())
+        lin_out = lin_out.repeat([1, 2])
+        lin_out[:,0] = 1-lin_out[:,1]
         return lin_out
 
 def get_logistic_model(num_phenos):
@@ -218,16 +235,11 @@ tin_weights = np.array([
     -0.033
 ])
 
-tin_pheno_weights = np.array([
-
-])
-
 def get_tin_pheno_weights_model():
     geno_weights = torch.tensor(tin_weights, dtype=torch.float32)
-    pheno_weights = torch.tensor(tin_pheno_weights, dtype=torch.float32)
-    net = logistic_geno(len(geno_weights), init=False)
+    net = tin_geno_pheno(len(geno_weights), 3)
     net.geno_linear[0].weight.data = geno_weights
-    net.pheno_linear[0].weight.data = pheno_weights
+    # net.pheno_linear[0].weight.data = pheno_weights
     net.geno_linear[0].requires_grad_(False)
     return net
 
@@ -239,6 +251,18 @@ def get_tin_weights_model():
     net.linear[0].weight.data = weights
     return net
 
+def train_cpu(params, net, train_set, test_set):
+    loss = nn.CrossEntropyLoss()
+    training_iter = torch.utils.data.DataLoader(train_set, params['batch_size'], shuffle=True)
+    trainer = torch.optim.SGD(net.parameters(), lr=params['lr'])
+    for e in tqdm(range(params['num_epochs']), ncols=0):
+        for phenos, pos, X, y in training_iter:
+            pred = net(phenos, X, pos) 
+            l = loss(pred, y)
+            trainer.zero_grad()
+            l.mean().backward()
+            trainer.step()
+
 def train_logistic_mlp(params, net, train_set, test_set):
     loss = nn.CrossEntropyLoss()
     all_phenos, _, _, gout = train_set[:]
@@ -248,47 +272,90 @@ def train_logistic_mlp(params, net, train_set, test_set):
     all_phenos = all_phenos.cuda()
     gout = gout.cuda()
     net = net.cuda()
-    train_subset = torch.utils.data.TensorDataset(all_phenos, gout)
-    test_subset = torch.utils.data.TensorDataset(test_phenos, test_gout)
-    train_subset = torch.utils.data.TensorDataset(all_phenos, gout)
-    training_iter = torch.utils.data.DataLoader(train_subset, params['batch_size'], shuffle=True)
-    # test_iter = torch.utils.data.DataLoader(test_subset, params['batch_size'], shuffle=True)
-    trainer = torch.optim.SGD(net.parameters(), lr=params['lr'])
-    # trainer = torch.optim.AdamW(net.parameters(), lr=params['lr'], amsgrad=True)
+    # train_subset = torch.utils.data.TensorDataset(all_phenos, gout)
+    # test_subset = torch.utils.data.TensorDataset(test_phenos, test_gout)
+    # train_subset = torch.utils.data.TensorDataset(all_phenos, gout)
+    training_iter = torch.utils.data.DataLoader(train_set, params['batch_size'], shuffle=True)
+    # training_iter = torch.utils.data.DataLoader(train_subset, params['batch_size'], shuffle=True)
+    test_iter = torch.utils.data.DataLoader(test_set, params['batch_size'], shuffle=True)
+    # trainer = torch.optim.SGD(net.parameters(), lr=params['lr'])
+    trainer = torch.optim.AdamW(net.parameters(), lr=params['lr'], amsgrad=True)
     for e in tqdm(range(params['num_epochs']), ncols=0):
         # for phenos, pos, X, y in tqdm(training_iter, ncols=0):
-        # for phenos, pos, X, y in training_iter:
-        for phenos, y in training_iter:
-            # phenos = phenos.cuda()
-            # y = y.cuda()
-            pred = net(phenos, None, None) 
+        sum_loss = 0.0
+        for phenos, pos, X, y in training_iter:
+        # for phenos, y in training_iter:
+            X = X.cuda()
+            pos = pos.cuda()
+            phenos = phenos.cuda()
+            y = y.cuda()
+            pred = net(phenos, X, pos) 
             l = loss(pred, y)
             trainer.zero_grad()
             l.mean().backward()
             trainer.step()
+            sum_loss += l
+        if e % (params['num_epochs'] / 10) == 0:
+            test_loss = 0.0
+            with torch.no_grad():
+                for phenos, pos, X, y in test_iter:
+                    X = X.cuda()
+                    y = y.cuda()
+                    pos = pos.cuda()
+                    phenos = phenos.cuda()
+                    Yh = net(phenos, X, pos)  # two-value softmax (binary classification)
+                    l = loss(Yh, y)
+                    test_loss += l.mean()
+            tmpstr = "epoch {}, mean loss {:.5}, {:.5} (test)".format(
+                    e, sum_loss / len(training_iter), test_loss / len(test_iter))
+            print(tmpstr)
 
-    print("random test cases:")
-    choice = np.random.choice(len(test_subset), 10)
-    phenos, y = test_subset[choice]
-    with torch.no_grad():
-        pred = net(phenos, None, None) 
-    for s, a, b in zip(phenos, pred, y):
-        print("(s: {}) - {:.2f}: {}".format(s[1], a[1], b))
+    # print("random test cases:")
+    # choice = np.random.choice(len(test_subset), 10)
+    # phenos, y = test_subset[choice]
+    # with torch.no_grad():
+    #     pred = net(phenos, None, None) 
+    # for s, a, b in zip(phenos, pred, y):
+    #     print("(s: {}) - {:.2f}: {}".format(s[1], a[1], b))
+
+def remove_bmi(dataset):
+    phenos, pos, x, y = dataset[:]
+    new_phenos = phenos[:,0:2]
+    new_dataset = torch.utils.data.TensorDataset(new_phenos, pos, x, y)
+    return new_dataset
 
 # logistic regression of age & sex to determine gout:
 def logistic():
     params = snp_network.default_parameters
     params['batch_size'] = 256
-    params['lr'] = 1e-5
-    params['encoding_version'] = 6
-    params['num_epochs'] = 500
+    params['lr'] = 1e-2
+    params['encoding_version'] = 5
+    params['num_epochs'] = 100
+    params['pretrain_base'] = 'tin_fixed_order'
+    params['plink_base'] = 'tin_fixed_order'
     train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(params)
-    params['num_phenos'] = num_phenos = 3
+    params['num_phenos'] = num_phenos = 2
+    train = remove_bmi(train)
+    test = remove_bmi(test)
     net = get_logistic_model(num_phenos) # all three for now
     train_logistic_mlp(params, net, train, test)
     net_file = environ.saved_nets_dir + "logistic_{}val".format(num_phenos)
     summarise_net(net, test, params, net_file)
 
+
+def logistic_geno_only():
+    params = snp_network.default_parameters
+    params['batch_size'] = 16
+    params['lr'] = 1e-5
+    params['encoding_version'] = 6
+    params['num_epochs'] = 50
+    train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(params)
+    params['num_phenos'] = num_phenos = 3
+    net = secretly_logistic_geno_only(geno.tok_mat.shape[1])
+    # net = nn.DataParallel(net)
+    train_logistic_mlp(params, net, train, test)
+    net_file = environ.saved_nets_dir + "logistic_{}val".format(num_phenos)
+    summarise_net(net, test, params, net_file)
 
 
 # simple mlp of age & sex to determine gout:
@@ -306,6 +373,54 @@ def mlp():
     net_file = environ.saved_nets_dir + "mlp_{}val".format(num_phenos)
     summarise_net(net, test, params, net_file)
 
+def add_prs_score_to_dataset(dataset, prs_net):
+    phenos, pos, x, y = dataset[:]
+    prs_scores = torch.unsqueeze(prs_net(phenos, x, pos)[:,1], 1)
+    new_phenos = torch.cat([phenos, prs_scores], 1)
+    new_dataset = torch.utils.data.TensorDataset(new_phenos, pos, x, y)
+    return new_dataset
+
+
+def prs_score_logistic():
+    params = snp_network.default_parameters
+    params['batch_size'] = 64
+    params['lr'] = 1e-2
+    params['encoding_version'] = 5
+    params['num_epochs'] = 100
+    params['pretrain_base'] = 'tin_fixed_order'
+    params['plink_base'] = 'tin_fixed_order'
+    train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(params)
+    params['num_phenos'] = num_phenos = 3
+
+    # # add tin prs to train and test sets.
+    with torch.no_grad():
+        prs_net = get_tin_weights_model()
+        train = remove_bmi(train)
+        test = remove_bmi(test)
+        train = add_prs_score_to_dataset(train, prs_net)
+        test = add_prs_score_to_dataset(test, prs_net)
+
+    net = secretly_logistic(num_phenos)
+    train_logistic_mlp(params, net, train, test)
+    # train_cpu(params, net, train, test)
+    net_file = environ.saved_nets_dir + "pheno_tin_scores"
+    summarise_net(net, test, params, net_file)
+
+
+def tin_pheno_prs():
+    params = snp_network.default_parameters
+    params['batch_size'] = 256
+    params['lr'] = 1e-5
+    params['encoding_version'] = 5
+    params['num_epochs'] = 100
+    params['pretrain_base'] = 'tin_fixed_order'
+    params['plink_base'] = 'tin_fixed_order'
+    params['num_phenos'] = 3
+    train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(params)
+    net = get_tin_pheno_weights_model()
+    train_logistic_mlp(params, net, train, test)
+    net_file = environ.saved_nets_dir + "pheno_tin"
+    summarise_net(net, test, params, net_file)
 
 def tin_prs():
     params = snp_network.default_parameters
@@ -324,4 +439,7 @@ def tin_prs():
 if __name__ == "__main__":
     # logistic()
     # mlp()
-    tin_prs()
+    # tin_prs()
+    # tin_pheno_prs()
+    # logistic_geno_only()
+    prs_score_logistic()
