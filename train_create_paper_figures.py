@@ -273,15 +273,17 @@ def pheno_v1():
     print("summarising test-set results")
     summarise_net(net, test, parameters, net_file)
 
+from logistic_regression import remove_bmi
+
 def vs_tin_net():
     parameters = snp_network.default_parameters
-    parameters['num_epochs'] = 100
+    parameters['num_epochs'] = 10
     parameters['pretrain_epochs'] = 0  # original version has no pre-training
     parameters['num_phenos'] = 3
     parameters['pt_lr'] = 1e-7
-    parameters['lr'] = 1e-7
+    parameters['lr'] = 1e-4
     parameters['encoding_version'] = 5
-    parameters['encoder_size'] = 123 # the size of gneotyped_p1e-1
+    parameters['encoder_size'] = 123
     parameters['batch_size'] = 256
     parameters['pretrain_base'] = 'tin_fixed_order'
     parameters['plink_base'] = 'tin_fixed_order'
