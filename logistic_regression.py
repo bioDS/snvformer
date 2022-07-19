@@ -35,13 +35,30 @@ def get_mlp_model(num_phenos, num_hidden):
     net = secretly_mlp(num_phenos, num_hidden)
     return net
 
+class logistic_geno(nn.Module):
+    def __init__(self, num_phenos, init=True):
+        super().__init__()
+        self.linear = nn.Sequential(
+            nn.Linear(num_phenos, 1),
+            nn.Sigmoid(),
+        )
+        if (init):
+            self.linear.apply(init_weights)
+
+    def forward(self, phenos, x, pos):
+        lin_out = self.linear(x.float())
+        lin_out = lin_out.repeat([1, 2])
+        lin_out[:,0] = 1-lin_out[:,1]
+        # print(lin_out.shape)
+        # quit()
+        return lin_out
 
 class secretly_logistic(nn.Module):
     def __init__(self, num_phenos):
         super().__init__()
         self.linear = nn.Sequential(
-            nn.Linear(num_phenos, 2),
-            nn.Softmax(dim=-1)
+            nn.Linear(num_phenos, 1),
+            nn.Sigmoid(),
         )
         self.linear.apply(init_weights)
 
@@ -53,6 +70,139 @@ def get_logistic_model(num_phenos):
     net = secretly_logistic(num_phenos)
     return net
 
+tin_weights = np.array([
+    0.024,
+    0.024,
+    0.100,
+    0.133,
+    0.058,
+    -0.036,
+    0.053,
+    -0.043,
+    -0.025,
+    0.023,
+    0.035,
+    0.025,
+    -0.056,
+    0.070,
+    0.052,
+    0.022,
+    0.041,
+    -0.022,
+    0.032,
+    -0.048,
+    -0.022,
+    0.038,
+    -0.086,
+    -0.024,
+    -0.023,
+    0.045,
+    0.048,
+    -0.021,
+    -0.028,
+    -0.028,
+    -0.062,
+    -0.022,
+    0.215,
+    0.330,
+    0.107,
+    0.022,
+    0.024,
+    0.093,
+    0.254,
+    0.023,
+    -0.023,
+    -0.028,
+    -0.027,
+    -0.042,
+    -0.074,
+    0.066,
+    0.062,
+    -0.091,
+    -0.067,
+    -0.057,
+    0.053,
+    -0.059,
+    0.051,
+    -0.048,
+    0.039,
+    0.029,
+    0.046,
+    0.030,
+    0.042,
+    0.049,
+    0.023,
+    0.030,
+    0.034,
+    -0.022,
+    0.041,
+    0.045,
+    -0.024,
+    0.031,
+    0.061,
+    -0.037,
+    0.064,
+    -0.039,
+    0.079,
+    -0.038,
+    0.025,
+    -0.029,
+    0.030,
+    0.079,
+    -0.048,
+    -0.033,
+    0.030,
+    0.025,
+    0.029,
+    -0.076,
+    0.046,
+    0.032,
+    -0.028,
+    -0.081,
+    0.032,
+    0.042,
+    -0.024,
+    0.026,
+    0.024,
+    -0.026,
+    -0.029,
+    0.025,
+    -0.028,
+    -0.054,
+    -0.040,
+    0.023,
+    0.046,
+    -0.030,
+    0.025,
+    0.041,
+    -0.026,
+    -0.028,
+    -0.036,
+    0.022,
+    0.025,
+    0.038,
+    0.050,
+    -0.030,
+    0.029,
+    0.039,
+    -0.024,
+    -0.027,
+    0.025,
+    -0.118,
+    0.023,
+    -0.023,
+    -0.076,
+    -0.025,
+    -0.033
+])
+
+def get_tin_weights_model():
+    #TODO check coded allele is the same
+    weights = torch.tensor(tin_weights)
+    print(len(weights))
+    net = logistic_geno(len(weights), init=False)
+    net.linear.weight = weights
+    return net
 
 def train_logistic_mlp(params, net, train_set, test_set):
     loss = nn.CrossEntropyLoss()
@@ -122,6 +272,21 @@ def mlp():
     summarise_net(net, test, params, net_file)
 
 
+def tin_prs():
+    params = snp_network.default_parameters
+    params['batch_size'] = 256
+    params['lr'] = 1e-5
+    params['encoding_version'] = 5
+    params['num_epochs'] = 0
+    params['pretrain_base'] = 'tin_fixed_order'
+    params['plink_base'] = 'tin_fixed_order'
+    params['num_phenos'] = 3
+    train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(params)
+    net = get_tin_weights_model()
+    net_file = environ.saved_nets_dir + "reuse_tin"
+    summarise_net(net, test, params, net_file)
+
 if __name__ == "__main__":
-    logistic()
-    mlp()
+    # logistic()
+    # mlp()
+    tin_prs()
