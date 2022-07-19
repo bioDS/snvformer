@@ -241,6 +241,7 @@ def summarise_net(net, test_data, parameters, net_file):
     plt.tight_layout()
     plt.savefig(net_file + "roc.pdf")
     plt.savefig(net_file + "roc.png")
+    print("saved in {}".format(net_file))
 
 
 if __name__ == "__main__":

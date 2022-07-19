@@ -10,6 +10,10 @@ from snp_network import get_net_savename
 from environ import saved_nets_dir
 from tqdm import tqdm
 import numpy as np
+from torch.utils import data
+import seaborn as sns
+import pandas
+import matplotlib.pyplot as plt
 
 # TODO: should we do this elsewhere?
 def init_weights(m):
@@ -35,18 +39,36 @@ def get_mlp_model(num_phenos, num_hidden):
     net = secretly_mlp(num_phenos, num_hidden)
     return net
 
+class tin_geno_pheno(nn.Module):
+    def __init__(self, num_geno, num_pheno):
+        super().__init__()
+        self.geno_linear = nn.Sequential(
+            nn.Linear(num_geno, 1, bias=False),
+        )
+        self.pheno_linear = nn.Sequential(
+            nn.Linear(num_geno, 1, bias=False),
+        )
+
+    def forward(self, phenos, x, pos):
+        lin_out = self.geno_linear(x.float()) + self.pheno_linear(phenos.float())
+        lin_out = lin_out.unsqueeze(1)
+        lin_out = lin_out.repeat([1, 2])
+        lin_out[:,0] = 1-lin_out[:,1]
+        return lin_out
+
 class logistic_geno(nn.Module):
     def __init__(self, num_phenos, init=True):
         super().__init__()
         self.linear = nn.Sequential(
-            nn.Linear(num_phenos, 1),
-            nn.Sigmoid(),
+            nn.Linear(num_phenos, 1, bias=False),
+            # nn.Sigmoid(),
         )
         if (init):
             self.linear.apply(init_weights)
 
     def forward(self, phenos, x, pos):
         lin_out = self.linear(x.float())
+        lin_out = lin_out.unsqueeze(1)
         lin_out = lin_out.repeat([1, 2])
         lin_out[:,0] = 1-lin_out[:,1]
         # print(lin_out.shape)
@@ -196,12 +218,25 @@ tin_weights = np.array([
     -0.033
 ])
 
+tin_pheno_weights = np.array([
+
+])
+
+def get_tin_pheno_weights_model():
+    geno_weights = torch.tensor(tin_weights, dtype=torch.float32)
+    pheno_weights = torch.tensor(tin_pheno_weights, dtype=torch.float32)
+    net = logistic_geno(len(geno_weights), init=False)
+    net.geno_linear[0].weight.data = geno_weights
+    net.pheno_linear[0].weight.data = pheno_weights
+    net.geno_linear[0].requires_grad_(False)
+    return net
+
+
 def get_tin_weights_model():
-    #TODO check coded allele is the same
-    weights = torch.tensor(tin_weights)
+    weights = torch.tensor(tin_weights, dtype=torch.float32)
     print(len(weights))
     net = logistic_geno(len(weights), init=False)
-    net.linear.weight = weights
+    net.linear[0].weight.data = weights
     return net
 
 def train_logistic_mlp(params, net, train_set, test_set):
