@@ -21,6 +21,8 @@ import environ
 # pretrain_base = os.environ['PRETRAIN_PLINK_FILE']
 cache_dir = environ.cache_dir
 
+def get_full_param_string(params: dict):
+    str = "\n".join("{}: {}".format(k, v) for k, v in params.items())
 
 def main():
     home_dir = os.environ.get("HOME")
@@ -130,6 +132,10 @@ def get_contributions(phenos, pos, tX, tY, net, params):
 
 
 def summarise_net(net, test_data, parameters, net_file):
+    # save parameters
+    param_string = get_full_param_string(parameters)
+    with open(net_file + "_params.txt") as f:
+        f.write(param_string)
     batch_size = parameters['batch_size']
     test_iter = data.DataLoader(test_data, (int)(batch_size), shuffle=False)
     actual_vals = []
