@@ -217,13 +217,48 @@ def pheno_96():
     parameters['lr'] = 1e-7
     parameters['pt_lr'] = 1e-7
     parameters['encoder_size'] = 65803  # the size of gneotyped_p1e-1
-    parameters['pretrain_epochs'] = 0  # original version has no pre-training
+    parameters['pretrain_epochs'] = 1
     parameters['num_phenos'] = 3
     parameters['use_phenos'] = True
     parameters['output_type'] = 'tok'
     parameters['embed_dim'] = 96
-    parameters['num_heads'] = 6
-    parameters['num_layers'] = 4
+    parameters['num_heads'] = 4
+    parameters['num_layers'] = 6
+    parameters['linformer_k'] = 96
+    parameters['use_linformer'] = True
+
+    # TODO loading all this here is overkill
+    train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(parameters)
+    pretrain_snv_toks = get_pretrain_dataset(train_ids, parameters)
+
+    # reload trained network if it exists
+    net_file = saved_nets_dir + get_net_savename(parameters)
+    net, pretrain_snv_toks = get_or_train_net(parameters, train_ids)
+
+    print("summarising test-set results")
+    summarise_net(net, test, parameters, net_file)
+
+def pheno_deep():
+    parameters = snp_network.default_parameters
+    parameters['pretrain_base'] = 'genotyped_p1e-1'
+    parameters['plink_base'] = 'genotyped_p1e-1'
+    parameters['continue_training'] = False
+    parameters['train_new_encoder'] = True
+    parameters['encoding_version'] = 2
+    parameters['test_frac'] = 0.25
+    parameters['verify_frac'] = 0.05
+    parameters['batch_size'] = 5
+    parameters['num_epochs'] = 60
+    parameters['lr'] = 1e-7
+    parameters['pt_lr'] = 1e-7
+    parameters['encoder_size'] = 65803  # the size of gneotyped_p1e-1
+    parameters['pretrain_epochs'] = 1
+    parameters['num_phenos'] = 3
+    parameters['use_phenos'] = True
+    parameters['output_type'] = 'tok'
+    parameters['embed_dim'] = 96
+    parameters['num_heads'] = 4
+    parameters['num_layers'] = 8
     parameters['linformer_k'] = 96
     parameters['use_linformer'] = True
 
@@ -277,14 +312,19 @@ from logistic_regression import remove_bmi
 
 def vs_tin_net():
     parameters = snp_network.default_parameters
-    parameters['num_epochs'] = 10
-    parameters['pretrain_epochs'] = 0  # original version has no pre-training
+    parameters['embed_dim'] = 96
+    parameters['num_heads'] = 6
+    parameters['num_layers'] = 4
+    parameters['linformer_k'] = 96
+    parameters['use_linformer'] = True
+    parameters['num_epochs'] = 5
+    parameters['pretrain_epochs'] = 0
     parameters['num_phenos'] = 3
-    parameters['pt_lr'] = 1e-7
+    parameters['pt_lr'] = 1e-5
     parameters['lr'] = 1e-4
     parameters['encoding_version'] = 5
     parameters['encoder_size'] = 123
-    parameters['batch_size'] = 256
+    parameters['batch_size'] = 32
     parameters['pretrain_base'] = 'tin_fixed_order'
     parameters['plink_base'] = 'tin_fixed_order'
     train_ids, train, test_ids, test, verify_ids, verify, geno, pheno, enc_ver = get_data(parameters)
@@ -293,15 +333,39 @@ def vs_tin_net():
     net_file = saved_nets_dir + get_net_savename(parameters)
     summarise_net(net, test, parameters, net_file)
 
+def mask_most_inputs():
+    parameters = snp_network.default_parameters
+    parameters['pretrain_base'] = 'genotyped_p1e-1'
+    parameters['plink_base'] = 'genotyped_p1e-1'
+    parameters['continue_training'] = False
+    parameters['train_new_encoder'] = True
+    parameters['encoding_version'] = 2
+    parameters['test_frac'] = 0.25
+    parameters['verify_frac'] = 0.05
+    parameters['batch_size'] = 5
+    parameters['num_epochs'] = 60
+    parameters['lr'] = 1e-7
+    parameters['pt_lr'] = 1e-7
+    parameters['encoder_size'] = 65803  # the size of gneotyped_p1e-1
+    parameters['pretrain_epochs'] = 0  # original version has no pre-training
+    parameters['num_phenos'] = 3
+    parameters['use_phenos'] = True
+    parameters['output_type'] = 'tok'
+    parameters['embed_dim'] = 96
+    parameters['num_heads'] = 6
+    parameters['num_layers'] = 4
+    parameters['linformer_k'] = 96
+    parameters['use_linformer'] = True
+
 
 if __name__ == "__main__":
     home_dir = os.environ.get("HOME")
     os.chdir(home_dir + "/work/gout-transformer")
 
-    vs_tin_net()
+    # vs_tin_net()
     # geno_only()
     # pheno_v1() # done
     # pheno_ternary()
     # combined_v6()
     # pheno_only()
-    # pheno_96()
+    pheno_96()
