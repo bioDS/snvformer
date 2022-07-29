@@ -44,7 +44,12 @@ class Tokenised_SNVs:
         self.tok_to_string = tok_to_string
         self.tok_mat = tok_mat
         self.num_toks = num_toks
-        self.positions = torch.tensor(geno.pos.values, dtype=torch.long)
+        # add chromosome to positions
+        exp = np.power(10,np.ceil(np.log10(geno.pos.values.max())))
+        tmp = np.array(geno.chrom.values).astype(int) * exp
+        positions = torch.tensor(geno.pos.values, dtype=torch.long)
+        new_pos = positions + tmp
+        self.positions = new_pos
 
 
 def read_from_plink(parameters, remove_nan=False, subsample_control=True, encoding: int = 2, test_frac=0.3, verify_frac=0.05, summarise_genos=False):
