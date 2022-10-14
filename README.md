@@ -4,4 +4,4 @@ This repository contains the code from the 2022 ICML Computational biology works
 
 `./train_create_paper_figures` runs the benchmarks in the paper.
 
-N.B. A number of paths are hard-coded, and access to data from the UK BioBank is required to actually re-produce the results.
+N.B. paths are read from the (excluded from repo) file `environ.py`, and access to data from the UK BioBank is required to actually re-produce the results.
